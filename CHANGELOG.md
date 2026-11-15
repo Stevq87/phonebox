@@ -6,6 +6,10 @@
 - **App shortcuts** widget: grid of installed app icons; tap to launch an app (Google Authenticator, Spotify…) and
   return with Back. Configure which apps to show in widget settings. Screen pinning (lock task) shows a message when
   active; unpin first (Back+Overview) to launch other apps. Android 11+ package visibility supported.
+- **Cursor** widget (AI coding category): monitors Cursor Cloud Agents via the Cursor API. Shows running agents with
+  status dots, elapsed time, repo/branch info; tap for details. Detects if Cursor IDE is running on the PC. Empty and
+  not-configured states guide setup. New "Cursor" page template combines this with sessions and GitHub.
+  Configure API key in Settings › General › Cursor (from cursor.com dashboard › Integrations › API keys).
 
 **Agent**
 - Settings: **Open on phone** works over Wi-Fi and Tailscale too. It shows the page selected in the editor on the phone

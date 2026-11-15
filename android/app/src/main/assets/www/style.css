@@ -1109,3 +1109,137 @@ body.night #night { display: flex; }
   font-size: 13px;
   white-space: pre-line;
 }
+
+/* ---------- Cursor Cloud Agents ---------- */
+.cu-ide {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 10px 4px;
+  display: none;
+}
+
+.cu-ide.cu-ide-on {
+  display: block;
+  color: #22c55e;
+}
+
+.cu-list {
+  overflow-y: auto;
+  padding: 4px 8px;
+}
+
+.cu-row {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 8px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  min-height: 36px;
+}
+
+.cu-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.cu-row:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cu-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: block;
+}
+
+.cu-dot-running {
+  background: #22c55e;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.cu-dot-finished {
+  background: #3b82f6;
+}
+
+.cu-dot-error {
+  background: #ef4444;
+}
+
+.cu-dot-setup {
+  background: #f59e0b;
+}
+
+.cu-dot-idle {
+  background: var(--dim);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.cu-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cu-time {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.cu-meta {
+  grid-column: 2 / 4;
+  font-size: 11px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cu-sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 20px;
+}
+
+.cu-sheet.on {
+  opacity: 1;
+}
+
+.cu-details {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 90%;
+  max-height: 80%;
+  overflow-y: auto;
+}
+
+.cu-details pre {
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: pre-wrap;
+  margin: 0 0 16px 0;
+}
+
+.cu-open-pr,
+.cu-close {
+  margin-top: 12px;
+  margin-right: 8px;
+}
