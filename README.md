@@ -18,7 +18,7 @@ Widgets for your PC, AI coding sessions, music, weather and anything you push to
 
 PhoneBox has two parts: a small **Android app** that runs full screen on the phone, and an **agent** on the computer
 (Windows, Linux or macOS) that feeds it over the USB cable (or over Wi-Fi / Tailscale after pairing once). You design
-the pages in a visual editor on the PC: **115 widgets**, **30 templates**, as many pages as you like.
+the pages in a visual editor on the PC: **116 widgets**, **30 templates**, as many pages as you like.
 
 - **Your PC at a glance**: CPU, GPU, RAM, disks, network and ping; the heaviest apps, with "end one instance / end all".
 - **AI coding**: Claude and Codex quotas with a burn-rate forecast; Codex remaining allowance and local session token details; tap a session to see its model, timing, tokens, context window and recent tool — the phone

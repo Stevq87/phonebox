@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+**Panel**
+- **App shortcuts** widget: grid of installed app icons; tap to launch an app (Google Authenticator, Spotify…) and
+  return with Back. Configure which apps to show in widget settings. Screen pinning (lock task) shows a message when
+  active; unpin first (Back+Overview) to launch other apps. Android 11+ package visibility supported.
+
 **Agent**
 - Settings: **Open on phone** works over Wi-Fi and Tailscale too. It shows the page selected in the editor on the phone
   (over USB it also wakes the phone, as before), and says "No phone connected" instead of claiming it worked (#62,

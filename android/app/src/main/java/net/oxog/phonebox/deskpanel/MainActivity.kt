@@ -369,6 +369,99 @@ class MainActivity : Activity(), SensorEventListener {
 
         @JavascriptInterface
         fun version(key: String): String = if (ok(key)) packageManager.getPackageInfo(packageName, 0).versionName ?: "" else ""
+
+        /**
+         * Get installed launchable apps for the app launcher widget.
+         * Returns JSON array with {packageName, appName, icon (base64 PNG)}.
+         */
+        @JavascriptInterface
+        fun installedApps(key: String): String {
+            if (!ok(key)) return "[]"
+            try {
+                val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                }
+                val apps = packageManager.queryIntentActivities(mainIntent, 0)
+                    .filter { it.activityInfo.packageName != packageName } // exclude PhoneBox itself
+                    .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+                    .map { resolveInfo ->
+                        val packageName = resolveInfo.activityInfo.packageName
+                        val appName = resolveInfo.loadLabel(packageManager).toString()
+                        // Get app icon as base64 PNG
+                        val icon = try {
+                            val drawable = resolveInfo.loadIcon(packageManager)
+                            val bitmap = android.graphics.Bitmap.createBitmap(
+                                96, 96, android.graphics.Bitmap.Config.ARGB_8888
+                            )
+                            val canvas = android.graphics.Canvas(bitmap)
+                            drawable.setBounds(0, 0, canvas.width, canvas.height)
+                            drawable.draw(canvas)
+                            val stream = java.io.ByteArrayOutputStream()
+                            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+                            android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+                        } catch (_: Exception) {
+                            ""
+                        }
+                        JSONObject()
+                            .put("packageName", packageName)
+                            .put("appName", appName)
+                            .put("icon", icon)
+                    }
+                return org.json.JSONArray(apps).toString()
+            } catch (e: Exception) {
+                Log.e("PhoneBox", "Failed to get installed apps", e)
+                return "[]"
+            }
+        }
+
+        /**
+         * Launch an app by package name. Returns {success: boolean, error?: string}.
+         * Handles kiosk mode considerations.
+         */
+        @JavascriptInterface
+        fun launchApp(key: String, packageName: String): String {
+            if (!ok(key)) return JSONObject().put("success", false).put("error", "Unauthorized").toString()
+            
+            runOnUiThread {
+                try {
+                    // Check if device is in lock task mode (screen pinning)
+                    val activityManager = getSystemService(ActivityManager::class.java)
+                    val lockTaskMode = activityManager.lockTaskModeState
+                    
+                    if (lockTaskMode != ActivityManager.LOCK_TASK_MODE_NONE) {
+                        // Device is pinned - show a toast explaining the limitation
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Screen pinning is active. Unpin (Back+Overview) to launch other apps.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        return@runOnUiThread
+                    }
+                    
+                    // Launch the app
+                    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(launchIntent)
+                    } else {
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "Cannot launch app",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e("PhoneBox", "Failed to launch app: $packageName", e)
+                    android.widget.Toast.makeText(
+                        this@MainActivity,
+                        "Error launching app",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            
+            return JSONObject().put("success", true).toString()
+        }
     }
 
     companion object {
