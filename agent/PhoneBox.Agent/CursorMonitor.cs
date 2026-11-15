@@ -27,14 +27,14 @@ public sealed class CursorMonitor(ConfigStore config, ILogger<CursorMonitor> log
     private volatile IReadOnlyList<CursorAgent> _agents = [];
     private volatile bool _ideRunning = false;
     private volatile string? _error = null;
-    private volatile long _lastUpdate = 0;
+    private long _lastUpdate = 0; // Use Interlocked for thread-safe access
     private int _pollInterval = 30_000; // 30 seconds default
     private int _consecutiveErrors = 0;
 
     public IReadOnlyList<CursorAgent> Agents() => _agents;
     public bool IdeRunning() => _ideRunning;
     public string? Error() => _error;
-    public long LastUpdate() => _lastUpdate;
+    public long LastUpdate() => Interlocked.Read(ref _lastUpdate);
     
     public int RunningCount() => _agents.Count(a => a.Status == "running");
     
@@ -144,7 +144,7 @@ public sealed class CursorMonitor(ConfigStore config, ILogger<CursorMonitor> log
         }
         
         _agents = agents;
-        _lastUpdate = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        Interlocked.Exchange(ref _lastUpdate, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 
     private static string MapStatus(string? status)
