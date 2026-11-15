@@ -394,6 +394,10 @@ public sealed partial class ConfigStore(string path)
     /// <summary>Pages a fresh install (or an empty page list) starts with.</summary>
     public static readonly string[] DefaultPages = ["home", "ai", "work", "system", "procs", "deck"];
 
+    /// <summary>Preserves the current secret when the incoming value is masked or empty; returns incoming if it's a new real value.</summary>
+    private static string? PreserveSecret(string? incoming, string? current) =>
+        string.IsNullOrWhiteSpace(incoming) || incoming.StartsWith("****") ? current : incoming;
+
     private static readonly JsonSerializerOptions ReadOpts = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -454,6 +458,15 @@ public sealed partial class ConfigStore(string path)
         AgentConfig cfg;
         try { cfg = JsonSerializer.Deserialize<AgentConfig>(json, ReadOpts) ?? throw new JsonException("empty"); }
         catch (JsonException ex) { return "Invalid JSON: " + ex.Message; }
+
+        // Preserve secrets that come back masked (****...) from the settings UI
+        var current = Get();
+        cfg.Lan.Token = PreserveSecret(cfg.Lan.Token, current.Lan.Token);
+        cfg.Lan.WebhookToken = PreserveSecret(cfg.Lan.WebhookToken, current.Lan.WebhookToken);
+        cfg.HomeAssistant.Token = PreserveSecret(cfg.HomeAssistant.Token, current.HomeAssistant.Token);
+        cfg.Obs.Password = PreserveSecret(cfg.Obs.Password, current.Obs.Password);
+        cfg.Cursor.ApiKey = PreserveSecret(cfg.Cursor.ApiKey, current.Cursor.ApiKey);
+        cfg.Grok.ApiKey = PreserveSecret(cfg.Grok.ApiKey, current.Grok.ApiKey);
 
         cfg = Normalize(cfg);
         foreach (var s in cfg.Shortcuts)
