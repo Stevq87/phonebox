@@ -18,6 +18,7 @@ public sealed class AgentConfig
     public LanConfig Lan { get; set; } = new();
     public UpdateConfig Updates { get; set; } = new();
     public CursorConfig Cursor { get; set; } = new();
+    public GrokConfig Grok { get; set; } = new();
     public ClaudeConfig Claude { get; set; } = new();
     public List<PageConfig> Pages { get; set; } = [];
     public List<Shortcut> Shortcuts { get; set; } = [];
@@ -167,6 +168,12 @@ public sealed class UpdateConfig
 public sealed class CursorConfig
 {
     /// <summary>Cursor Cloud API key (from cursor.com dashboard › Integrations › API keys). Never logged or sent to the phone.</summary>
+    public string? ApiKey { get; set; }
+}
+
+public sealed class GrokConfig
+{
+    /// <summary>xAI API key (from console.x.ai). Never logged or sent to the phone.</summary>
     public string? ApiKey { get; set; }
 }
 

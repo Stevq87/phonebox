@@ -142,62 +142,113 @@ Or alternative structure:
 
 ---
 
-## 2. GROK BOT - Usage/Quota API Research
+## 2. GROK BOT - Usage/Quota API Research & Implementation
 
-### Research Findings
+### Research Findings (Updated)
 
-#### Product Identity Investigation
-Extensive search yielded **no clear product** matching "Grok Bot (a desktop assistant app by SpaceXAI/Cursor)":
+**User clarified**: Grok Bot is xAI's product from https://x.ai/news/introducing-grok-bot
 
-**Search Results:**
-1. **File system search**:
-   ```bash
-   find ~ -name "*grok*" -o -name "*grokbot*"
+#### Product Identity
+- **Product**: Grok language model by xAI (Elon Musk's AI company)
+- **API**: OpenAI-compatible API at `https://api.x.ai`
+- **Console**: https://console.x.ai (for API key management)
+- **Usage endpoint**: `https://api.x.ai/v1/usage` (inferred, following OpenAI pattern)
+
+### What Was Implemented
+
+**File**: `agent/PhoneBox.Agent/QuotaMonitor.cs`
+
+1. **Added Grok quota provider** (provider ID: `grokbot`) alongside Claude, Codex, Antigravity, and Cursor
+2. **RefreshGrok() method** that:
+   - Uses xAI API key from `config.json` (`Grok.ApiKey`)
+   - Polls `https://api.x.ai/v1/usage` endpoint
+   - Parses flexible OpenAI-compatible response structures
+   - Handles HTTP 404 gracefully (reports "Usage API not available")
+   - Caches last good data on transient failures
+   - Polls every 3 minutes when healthy, 1 minute on errors
+
+3. **ParseGrokLimits() helper** that:
+   - Attempts multiple OpenAI-compatible JSON structures
+   - Parses `data[]` array format (OpenAI style)
+   - Falls back to `usage.{property}` object structure
+   - Falls back to `limits[]` array format
+   - Calculates usage percentage
+   - Applies severity thresholds (error ≥95%, warning ≥80%)
+   - Extracts reset timestamps
+
+**File**: `agent/PhoneBox.Agent/Config.cs`
+
+Added `GrokConfig` class:
+```csharp
+public sealed class GrokConfig
+{
+    /// <summary>xAI API key (from console.x.ai). Never logged or sent to the phone.</summary>
+    public string? ApiKey { get; set; }
+}
+```
+
+Added to `AgentConfig`:
+```csharp
+public GrokConfig Grok { get; set; } = new();
+```
+
+4. **Updated widget definitions** in `widgets.json`:
+   - Added "grokbot" to `quotas` widget default providers
+   - Added "grokbot" to `codexbar` widget default providers
+   - Added "grokbot" to `quotaring` widget provider choices
+
+### Configuration Required
+
+**User Action**: Add xAI API key to PhoneBox settings
+
+1. **Obtain API key**:
+   - Go to https://console.x.ai
+   - Sign in with your xAI account
+   - Navigate to API keys section
+   - Generate or copy an existing API key
+
+2. **Configure in PhoneBox**:
+   - In the PhoneBox Android app settings, find "Grok API key" or "xAI API key" field
+   - Paste the API key
+   - This is a **separate key** from Cursor (xAI and Cursor are different services)
+
+3. **Verify in config.json** (on PC):
+   ```json
+   {
+     "grok": {
+       "apiKey": "xai-*********************"
+     }
+   }
    ```
-   Found only Cursor IDE plugin references:
-   - `/home/ubuntu/.cursor/skills-cursor/.kits/cursor-pages/sdk/grok`
-   - `/home/ubuntu/.cursor/plugins/cache/cursor-public/*/.../.grok-plugin`
-   
-   These are Cursor IDE SDK/plugin artifacts, not a standalone desktop app.
 
-2. **codebase search**: No references to "grokbot" or standalone Grok product
+### Limitations & Caveats
 
-3. **Company verification**: 
-   - "SpaceXAI" does not exist as a company
-   - xAI (by Elon Musk) makes the Grok LLM
-   - No evidence of xAI making a desktop "Grok Bot" app
+1. **API Endpoint Uncertainty**:
+   - The `/v1/usage` endpoint is inferred based on OpenAI-compatible API patterns
+   - xAI's API may use a different endpoint structure
+   - Implementation handles HTTP 404 gracefully and will not crash
 
-#### Possible Interpretations
+2. **Response Format Flexibility**:
+   - The parser attempts multiple JSON structures (OpenAI style, simple object, limits array)
+   - If xAI's actual response format differs significantly, parsing may fail silently (returns empty limits)
 
-1. **xAI's Grok LLM** (API-based):
-   - Product: Grok language model by xAI
-   - API endpoint: `https://api.x.ai/v1/...`
-   - Would require xAI API key (different from Cursor)
-   - Usage endpoint: Likely `https://api.x.ai/v1/usage` (unverified)
-   - **Feasibility**: Could implement if user confirms this is what they meant
+3. **API Maturity**:
+   - xAI's API is relatively new compared to OpenAI/Anthropic
+   - Usage/quota endpoints may not exist yet or may be beta-only
+   - May require specific plan/tier for access
 
-2. **Cursor's Grok Models**:
-   - Cursor may offer xAI Grok models through their platform
-   - Usage would be tracked under Cursor's own usage API
-   - Already covered by Cursor quota provider above
-
-3. **Typo/Confusion**:
-   - User may have meant a different product
-   - "Bot" suffix might indicate a specific feature/integration
+4. **Rate Limiting**:
+   - Polls every 3 minutes to avoid rate limits
+   - Backs off to 1 minute on errors
 
 ### Implementation Verdict
 
-**STATUS**: ❌ **NOT FEASIBLE** without clarification
+**STATUS**: ✅ **IMPLEMENTED** (with best-effort approach)
 
-**Reasons:**
-1. Cannot identify what "Grok Bot" product actually is
-2. No verifiable API endpoint or local data source
-3. Cannot implement quota monitoring for unknown product
-4. Risk of implementing wrong thing based on guesses
-
-**If User Clarifies:**
-- If it's **xAI's Grok API**: Can implement similar to Claude (needs API key from https://x.ai)
-- If it's **another product**: Need product name, API docs, auth method
+- Similar pattern to Cursor quota provider
+- Handles errors gracefully
+- Will report "Usage API not available" if endpoint doesn't exist
+- Ready to test once user adds xAI API key
 
 ---
 
@@ -205,15 +256,21 @@ Extensive search yielded **no clear product** matching "Grok Bot (a desktop assi
 
 ### Files Modified
 1. **agent/PhoneBox.Agent/QuotaMonitor.cs**:
-   - Added `_cursor` provider field and `_nextCursor` poll timer
-   - Added `RefreshCursor()` method (polls usage API)
+   - Added `_cursor` and `_grok` provider fields with poll timers
+   - Added `RefreshCursor()` method (polls Cursor usage API)
    - Added `ParseCursorLimits()` helper
-   - Added "cursor" to core provider list
+   - Added `RefreshGrok()` method (polls xAI usage API)
+   - Added `ParseGrokLimits()` helper
+   - Added "cursor" and "grokbot" to core provider list
 
-2. **agent/PhoneBox.Agent/widgets.json**:
-   - Updated `quotas` widget: Added "cursor" to default providers and choices
-   - Updated `codexbar` widget: Added "cursor" to default providers and choices
-   - Updated `quotaring` widget: Added "cursor" to provider choices
+2. **agent/PhoneBox.Agent/Config.cs**:
+   - Added `GrokConfig` class with `ApiKey` property
+   - Added `public GrokConfig Grok { get; set; } = new();` to `AgentConfig`
+
+3. **agent/PhoneBox.Agent/widgets.json**:
+   - Updated `quotas` widget: Added "cursor" and "grokbot" to default providers and choices
+   - Updated `codexbar` widget: Added "cursor" and "grokbot" to default providers and choices
+   - Updated `quotaring` widget: Added "cursor" and "grokbot" to provider choices
 
 ### Build & Test Results
 ```bash
@@ -237,16 +294,16 @@ PASS: 0.9.6; Android metadata; 117 widgets; 31 templates; README/demo counts
 
 ### For Cursor
 ✅ **Implemented and ready to test**
-- User should add Cursor API key in PhoneBox settings
+- User should add Cursor API key in PhoneBox settings (from cursor.com/dashboard)
 - Quota widget will show Cursor usage if API endpoint exists
 - If endpoint doesn't exist, will gracefully report "Usage API not available"
 
 ### For Grok Bot
-❌ **Needs user clarification**
-- User should specify:
-  1. Exact product name and vendor
-  2. Where to obtain API key or how to access usage data
-  3. API documentation link (if available)
+✅ **Implemented and ready to test**
+- User should add xAI API key in PhoneBox settings (from console.x.ai)
+- Quota widget will show Grok usage if API endpoint exists
+- If endpoint doesn't exist, will gracefully report "Usage API not available"
+- **Important**: xAI API key is **separate** from Cursor API key
 
 ---
 
@@ -258,10 +315,13 @@ PASS: 0.9.6; Android metadata; 117 widgets; 31 templates; README/demo counts
 - Dashboard: https://cursor.com/dashboard
 - API key location: Integrations → API keys
 
-### xAI Grok (if relevant)
-- Company: xAI (not SpaceXAI)
+### xAI Grok
+- Company: xAI (by Elon Musk)
+- Product announcement: https://x.ai/news/introducing-grok-bot
 - Product page: https://x.ai
-- API: Presumed at https://api.x.ai (not verified)
+- API: https://api.x.ai (OpenAI-compatible)
+- Console: https://console.x.ai (API key management)
+- Inferred usage endpoint: https://api.x.ai/v1/usage
 
 ### Existing Quota Providers (for reference)
 - **Claude**: `https://api.anthropic.com/api/oauth/usage` (OAuth token from `~/.claude/.credentials.json`)
