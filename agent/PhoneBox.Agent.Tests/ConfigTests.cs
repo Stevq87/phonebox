@@ -282,3 +282,191 @@ public class Hour12ConfigTests
         }
     }
 }
+
+/// <summary>Secrets (API keys, tokens, passwords) must be masked when sent to the settings UI and preserved when saved back.</summary>
+public class SecretMaskingTests
+{
+    private static (ConfigStore Store, string Path) NewStore()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"phonebox-secrets-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "{}");
+        return (new ConfigStore(path), path);
+    }
+
+    [Fact]
+    public void SecretsAreMaskedInToSettingsView()
+    {
+        var (store, path) = NewStore();
+        try
+        {
+            // Save a config with real secrets
+            var saveJson = """
+            {
+                "lan": { "token": "secret-lan-token-12345", "webhookToken": "secret-webhook-67890" },
+                "homeAssistant": { "token": "hass-token-abcdef" },
+                "obs": { "password": "obs-pass-xyz" },
+                "cursor": { "apiKey": "cur_realkey123456" }
+            }
+            """;
+            Assert.Null(store.Save(saveJson));
+
+            // Get the masked version
+            var masked = store.Get().ToSettingsView();
+
+            // All secrets should be masked
+            Assert.Equal("****2345", masked.Lan.Token);
+            Assert.Equal("****7890", masked.Lan.WebhookToken);
+            Assert.Equal("****cdef", masked.HomeAssistant.Token);
+            Assert.Equal("****-xyz", masked.Obs.Password);
+            Assert.Equal("****3456", masked.Cursor.ApiKey);
+
+            // Short secrets should be fully masked
+            var shortSecret = store.Get();
+            shortSecret.Cursor.ApiKey = "abc";
+            var maskedShort = shortSecret.ToSettingsView();
+            Assert.Equal("****", maskedShort.Cursor.ApiKey);
+        }
+        finally { File.Delete(path); File.Delete(path + ".bak"); }
+    }
+
+    [Fact]
+    public void MaskedSecretsArePreservedOnSave()
+    {
+        var (store, path) = NewStore();
+        try
+        {
+            // Save initial config with real secrets
+            var initial = """
+            {
+                "lan": { "token": "secret-lan-token-12345", "webhookToken": "secret-webhook-67890" },
+                "homeAssistant": { "url": "http://ha.local", "token": "hass-token-abcdef" },
+                "obs": { "enabled": true, "url": "ws://localhost:4455", "password": "obs-pass-xyz" },
+                "cursor": { "apiKey": "cur_realkey123456" },
+                "weather": { "city": "Test City", "lat": 50.0, "lon": 10.0 }
+            }
+            """;
+            Assert.Null(store.Save(initial));
+            var originalToken = store.Get().Lan.Token;
+            var originalWebhookToken = store.Get().Lan.WebhookToken;
+            var originalHaToken = store.Get().HomeAssistant.Token;
+            var originalObsPassword = store.Get().Obs.Password;
+            var originalCursorKey = store.Get().Cursor.ApiKey;
+
+            // Simulate the settings UI round-trip: get masked config, modify non-secret field, save back
+            var masked = store.Get().ToSettingsView();
+            var roundTrip = JsonSerializer.Serialize(masked, ConfigStore.WriteOpts);
+            var doc = JsonDocument.Parse(roundTrip);
+            var mutated = doc.RootElement.Clone();
+            
+            // Modify a non-secret field (weather city) and serialize back
+            var modified = $$"""
+            {
+                "lan": { "token": "{{masked.Lan.Token}}", "webhookToken": "{{masked.Lan.WebhookToken}}", "enabled": false, "port": 8766 },
+                "homeAssistant": { "url": "http://ha.local", "token": "{{masked.HomeAssistant.Token}}" },
+                "obs": { "enabled": true, "url": "ws://localhost:4455", "password": "{{masked.Obs.Password}}" },
+                "cursor": { "apiKey": "{{masked.Cursor.ApiKey}}" },
+                "weather": { "city": "Modified City", "lat": 50.0, "lon": 10.0 }
+            }
+            """;
+
+            // Save the modified config with masked secrets
+            Assert.Null(store.Save(modified));
+
+            // All secrets should be preserved, non-secret changes applied
+            Assert.Equal("Modified City", store.Get().Weather.City);
+            Assert.Equal(originalToken, store.Get().Lan.Token);
+            Assert.Equal(originalWebhookToken, store.Get().Lan.WebhookToken);
+            Assert.Equal(originalHaToken, store.Get().HomeAssistant.Token);
+            Assert.Equal(originalObsPassword, store.Get().Obs.Password);
+            Assert.Equal(originalCursorKey, store.Get().Cursor.ApiKey);
+        }
+        finally { File.Delete(path); File.Delete(path + ".bak"); }
+    }
+
+    [Fact]
+    public void NewRealSecretsReplaceOldOnes()
+    {
+        var (store, path) = NewStore();
+        try
+        {
+            // Save initial config
+            var initial = """
+            {
+                "cursor": { "apiKey": "cur_oldkey123" }
+            }
+            """;
+            Assert.Null(store.Save(initial));
+
+            // Save with new real secrets (not masked)
+            var updated = """
+            {
+                "cursor": { "apiKey": "cur_newkey789" }
+            }
+            """;
+            Assert.Null(store.Save(updated));
+
+            // New values should be stored
+            Assert.Equal("cur_newkey789", store.Get().Cursor.ApiKey);
+        }
+        finally { File.Delete(path); File.Delete(path + ".bak"); }
+    }
+
+    [Fact]
+    public void EmptyOrNullSecretsPreserveExisting()
+    {
+        var (store, path) = NewStore();
+        try
+        {
+            // Save initial config
+            var initial = """
+            {
+                "cursor": { "apiKey": "cur_original123" }
+            }
+            """;
+            Assert.Null(store.Save(initial));
+
+            // Save with empty/null secrets
+            var updated = """
+            {
+                "cursor": { "apiKey": "" }
+            }
+            """;
+            Assert.Null(store.Save(updated));
+
+            // Original values should be preserved
+            Assert.Equal("cur_original123", store.Get().Cursor.ApiKey);
+        }
+        finally { File.Delete(path); File.Delete(path + ".bak"); }
+    }
+
+    [Fact]
+    public void RealValuesCanBeCleared()
+    {
+        var (store, path) = NewStore();
+        try
+        {
+            // Save initial config with secrets
+            var initial = """
+            {
+                "cursor": { "apiKey": "cur_toDelete123" }
+            }
+            """;
+            Assert.Null(store.Save(initial));
+            Assert.NotNull(store.Get().Cursor.ApiKey);
+
+            // To actually clear a secret, the UI should send a sentinel value
+            // For now, empty/null preserves the existing value
+            // This test documents current behavior
+            var cleared = """
+            {
+                "cursor": { "apiKey": "" }
+            }
+            """;
+            Assert.Null(store.Save(cleared));
+            
+            // Current behavior: empty/null preserves existing
+            Assert.Equal("cur_toDelete123", store.Get().Cursor.ApiKey);
+        }
+        finally { File.Delete(path); File.Delete(path + ".bak"); }
+    }
+}

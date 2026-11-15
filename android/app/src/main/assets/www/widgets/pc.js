@@ -620,6 +620,130 @@ W.nextup = {
   },
 };
 
+// Cursor Cloud Agents: running agents, IDE status, tap for details
+W.cursor = {
+  needs: ['work'],
+  create(box, { o }) {
+    const title = o.title ? h('div', 'w-title', o.title) : h('div', 'w-title', 'Cursor');
+    const list = h('div', 'cu-list');
+    const ideStatus = h('div', 'cu-ide');
+    box.append(title, ideStatus, list);
+    
+    let lastKey = '';
+    
+    return {
+      update() {
+        const cursor = D.work?.cursor;
+        const agents = cursor?.agents || [];
+        const ideRunning = cursor?.ideRunning;
+        const error = cursor?.error;
+        const runningCount = cursor?.runningCount || 0;
+        
+        const key = JSON.stringify([agents.map(a => a.Id + a.Status), ideRunning, error, runningCount]);
+        if (key === lastKey) return;
+        lastKey = key;
+        
+        // IDE status
+        if (ideRunning) {
+          ideStatus.textContent = '💻 Cursor IDE running';
+          ideStatus.className = 'cu-ide cu-ide-on';
+        } else {
+          ideStatus.textContent = '';
+          ideStatus.className = 'cu-ide';
+        }
+        
+        // Error state
+        if (error) {
+          if (error === 'Invalid API key') {
+            list.replaceChildren(h('div', 'empty', 
+              'Invalid Cursor API key\nAdd it in Settings › General › Cursor › API key'));
+          } else if (error === 'Rate limited') {
+            list.replaceChildren(h('div', 'empty', 'Cursor API rate limited\nRetrying with backoff…'));
+          } else {
+            list.replaceChildren(h('div', 'empty', `Cursor API: ${error}`));
+          }
+          return;
+        }
+        
+        // Not configured
+        if (!agents.length && !error) {
+          list.replaceChildren(h('div', 'empty', 
+            'No Cursor Cloud Agents\nAdd API key in Settings › General › Cursor'));
+          return;
+        }
+        
+        // Sort: running first, then by update time
+        const sorted = [...agents].sort((a, b) => {
+          if (a.Status === 'running' && b.Status !== 'running') return -1;
+          if (a.Status !== 'running' && b.Status === 'running') return 1;
+          return b.UpdatedAt - a.UpdatedAt;
+        });
+        
+        const rows = sorted.slice(0, 20).map(agent => {
+          const row = h('div', 'cu-row');
+          const statusDot = h('i', 'cu-dot cu-dot-' + agent.Status);
+          const nameEl = h('span', 'cu-name', agent.Title || 'Untitled');
+          const timeEl = h('span', 'cu-time', ago(agent.UpdatedAt));
+          const metaEl = h('div', 'cu-meta');
+          
+          const meta = [];
+          if (agent.Repo) meta.push(agent.Repo);
+          if (agent.Branch) meta.push(agent.Branch);
+          if (meta.length) metaEl.textContent = meta.join(' · ');
+          
+          row.append(statusDot, nameEl, timeEl);
+          if (meta.length) row.appendChild(metaEl);
+          
+          // Tap to show details
+          row.addEventListener('click', () => {
+            haptic();
+            const details = [
+              agent.Title || 'Untitled',
+              '',
+              `Status: ${agent.Status}`,
+              agent.Repo ? `Repo: ${agent.Repo}` : null,
+              agent.Branch ? `Branch: ${agent.Branch}` : null,
+              agent.PrUrl ? `PR: ${agent.PrUrl}` : null,
+              '',
+              `Created: ${new Date(agent.CreatedAt).toLocaleString()}`,
+              `Updated: ${new Date(agent.UpdatedAt).toLocaleString()}`,
+            ].filter(Boolean).join('\n');
+            
+            const sheet = h('div', 'sheet cu-sheet');
+            const content = h('div', 'cu-details', h('pre', null, details));
+            const close = h('button', 'mini-btn cu-close', 'Close');
+            
+            close.addEventListener('click', () => {
+              haptic();
+              sheet.remove();
+            });
+            
+            if (agent.PrUrl) {
+              const openPr = h('button', 'mini-btn cu-open-pr', '🔗 Open PR');
+              openPr.addEventListener('click', () => {
+                haptic();
+                // Can't actually open URLs from the panel, but show toast
+                toast('PR URL: ' + agent.PrUrl);
+              });
+              content.appendChild(openPr);
+            }
+            
+            content.appendChild(close);
+            sheet.appendChild(content);
+            document.body.appendChild(sheet);
+            
+            setTimeout(() => sheet.classList.add('on'), 10);
+          });
+          
+          return row;
+        });
+        
+        list.replaceChildren(...rows);
+      },
+    };
+  },
+};
+
 // One GPU in detail: load, memory, temperatures, power, clocks and fan. NVIDIA comes from nvidia-smi; AMD and Intel
 // from Windows' own GPU counters (temperature, VRAM, load), richer with LibreHardwareMonitor (hot spot, watts, fan, clocks).
 const GPU_VENDOR = { nvidia: 'NVIDIA', amd: 'AMD', intel: 'Intel', apple: 'Apple', qualcomm: 'Qualcomm' };

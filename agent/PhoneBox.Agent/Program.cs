@@ -63,6 +63,7 @@ AddMonitor<MediaMonitor>(builder.Services);
 AddMonitor<QuotaMonitor>(builder.Services);
 AddMonitor<ProcessMonitor>(builder.Services);
 AddMonitor<SessionMonitor>(builder.Services);
+AddMonitor<CursorMonitor>(builder.Services);
 AddMonitor<GitHubMonitor>(builder.Services);
 AddMonitor<PingMonitor>(builder.Services);
 AddMonitor<AdbReverse>(builder.Services);
@@ -326,7 +327,7 @@ app.MapGet("/favicon.ico", () => AppPaths.Resource("phonebox.ico") is { } s ? Re
 // The version lets the settings page save only over what it loaded (X-Config-Version, see ConfigStore.Save).
 app.MapGet("/api/settings", (ConfigStore cfg, HttpResponse res) =>
 {
-    var json = JsonSerializer.Serialize(cfg.Get(), ConfigStore.WriteOpts);
+    var json = JsonSerializer.Serialize(cfg.Get().ToSettingsView(), ConfigStore.WriteOpts);
     res.Headers["X-Config-Version"] = cfg.Version.ToString();
     return Results.Text(json, "application/json; charset=utf-8");
 });
@@ -626,10 +627,18 @@ app.MapPost("/api/volume", (int? level, string? op, AudioControl audio) =>
 
 app.MapGet("/api/quotas", (QuotaMonitor q) => Results.Json(new { providers = q.Snapshot(), overview = q.Overview() }));
 
-app.MapGet("/api/work", (SessionMonitor s, GitHubMonitor gh) => Results.Json(new
+app.MapGet("/api/work", (SessionMonitor s, GitHubMonitor gh, CursorMonitor cursor) => Results.Json(new
 {
     sessions = s.Snapshot(),
     github = gh.Snapshot(),
+    cursor = new
+    {
+        agents = cursor.Agents(),
+        ideRunning = cursor.IdeRunning(),
+        error = cursor.Error(),
+        lastUpdate = cursor.LastUpdate(),
+        runningCount = cursor.RunningCount(),
+    },
 }));
 
 app.MapGet("/api/proxy", (string? url, CancellationToken ct) => WidgetFeedProxy.FetchAsync(url, ct));

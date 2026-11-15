@@ -1119,3 +1119,85 @@ W.inbox = {
     };
   },
 };
+
+W['app-launcher'] = {
+  needs: [],
+  create(box, { o }) {
+    const columns = o.columns || 4;
+    const configuredApps = o.apps || [];
+    const grid = h('div', 'app-grid');
+    const title = o.title ? h('div', 'w-title', o.title) : null;
+    
+    if (title) box.append(title);
+    box.append(grid);
+    
+    // Load installed apps from Android
+    const loadApps = async () => {
+      try {
+        if (!window.Android?.installedApps) {
+          grid.innerHTML = '<div class="empty">App launcher requires Android bridge</div>';
+          return;
+        }
+        
+        const appsJson = window.Android.installedApps(window.__phoneboxKey);
+        const allApps = JSON.parse(appsJson);
+        
+        if (!allApps || allApps.length === 0) {
+          grid.innerHTML = '<div class="empty">No launchable apps found</div>';
+          return;
+        }
+        
+        // Filter to configured apps if specified, otherwise show all
+        let appsToShow = allApps;
+        if (configuredApps.length > 0) {
+          appsToShow = configuredApps.map(pkg => allApps.find(app => app.packageName === pkg)).filter(Boolean);
+        }
+        
+        if (appsToShow.length === 0) {
+          grid.innerHTML = '<div class="empty">No configured apps found.\nConfigure in widget settings.</div>';
+          return;
+        }
+        
+        grid.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+        grid.replaceChildren(...appsToShow.map(app => {
+          const item = h('div', 'app-item');
+          const icon = h('img', 'app-icon');
+          icon.src = `data:image/png;base64,${app.icon}`;
+          icon.alt = app.appName;
+          icon.onerror = () => { icon.style.display = 'none'; };
+          
+          const label = h('div', 'app-label', app.appName);
+          
+          item.append(icon, label);
+          item.addEventListener('click', async () => {
+            haptic();
+            if (!window.Android?.launchApp) return;
+            
+            try {
+              const result = window.Android.launchApp(window.__phoneboxKey, app.packageName);
+              const res = JSON.parse(result);
+              if (!res.success && res.error) {
+                toast(res.error);
+              }
+            } catch (e) {
+              console.error('Failed to launch app:', e);
+            }
+          });
+          
+          return item;
+        }));
+      } catch (e) {
+        console.error('Failed to load apps:', e);
+        grid.innerHTML = '<div class="empty">Error loading apps</div>';
+      }
+    };
+    
+    loadApps();
+    
+    return {
+      update() {
+        // Apps don't change frequently, no need to reload
+      },
+    };
+  },
+};

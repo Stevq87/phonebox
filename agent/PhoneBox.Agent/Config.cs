@@ -17,6 +17,7 @@ public sealed class AgentConfig
     public DisplayConfig Display { get; set; } = new();
     public LanConfig Lan { get; set; } = new();
     public UpdateConfig Updates { get; set; } = new();
+    public CursorConfig Cursor { get; set; } = new();
     public ClaudeConfig Claude { get; set; } = new();
     public List<PageConfig> Pages { get; set; } = [];
     public List<Shortcut> Shortcuts { get; set; } = [];
@@ -62,6 +63,54 @@ public sealed class AgentConfig
         rules = Rules.Select(r => new { r.Id, r.Name, r.Enabled, r.When }),
         charge = new { Charge.Enabled, Charge.Min, Charge.Max },
     };
+
+    /// <summary>Masks secrets (API keys, tokens, passwords) for the settings UI. Shows only last 4 chars or that a secret is set.</summary>
+    private static string? Mask(string? secret) =>
+        string.IsNullOrWhiteSpace(secret) ? null : secret.Length > 4 ? "****" + secret[^4..] : "****";
+
+    /// <summary>Returns a copy of this config with secrets masked for the settings web UI.</summary>
+    public AgentConfig ToSettingsView()
+    {
+        var masked = new AgentConfig
+        {
+            CodexBar = CodexBar,
+            Controls = Controls,
+            DeviceSerial = DeviceSerial,
+            AdbPath = AdbPath,
+            Weather = Weather,
+            Ping = Ping,
+            Night = Night,
+            Display = Display,
+            Lan = new LanConfig
+            {
+                Enabled = Lan.Enabled,
+                Port = Lan.Port,
+                Token = Mask(Lan.Token),
+                WebhookToken = Mask(Lan.WebhookToken),
+            },
+            Updates = Updates,
+            Cursor = new CursorConfig { ApiKey = Mask(Cursor.ApiKey) },
+            Claude = Claude,
+            Pages = Pages,
+            Shortcuts = Shortcuts,
+            Rules = Rules,
+            Charge = Charge,
+            Phones = Phones,
+            Calendars = Calendars,
+            HomeAssistant = new HomeAssistantConfig
+            {
+                Url = HomeAssistant.Url,
+                Token = Mask(HomeAssistant.Token),
+            },
+            Obs = new ObsConfig
+            {
+                Enabled = Obs.Enabled,
+                Url = Obs.Url,
+                Password = Mask(Obs.Password),
+            },
+        };
+        return masked;
+    }
 
     /// <summary>Ending processes is allowed when an enabled page has a processes widget that allows it.</summary>
     public IEnumerable<WidgetConfig> Widgets(bool enabledPagesOnly = false) => Pages.Where(p => !enabledPagesOnly || p.Enabled)
@@ -165,6 +214,12 @@ public sealed class UpdateConfig
     /// <summary>Install new GitHub releases automatically (phone app over USB, agent in place).</summary>
     public bool Auto { get; set; } = true;
     public string Repo { get; set; } = "ersinkoc/phonebox";
+}
+
+public sealed class CursorConfig
+{
+    /// <summary>Cursor Cloud API key (from cursor.com dashboard › Integrations › API keys). Never logged or sent to the phone.</summary>
+    public string? ApiKey { get; set; }
 }
 
 public sealed class ClaudeConfig
@@ -335,6 +390,10 @@ public sealed partial class ConfigStore(string path)
     /// <summary>Pages a fresh install (or an empty page list) starts with.</summary>
     public static readonly string[] DefaultPages = ["home", "ai", "work", "system", "procs", "deck"];
 
+    /// <summary>Preserves the current secret when the incoming value is masked or empty; returns incoming if it's a new real value.</summary>
+    private static string? PreserveSecret(string? incoming, string? current) =>
+        string.IsNullOrWhiteSpace(incoming) || incoming.StartsWith("****") ? current : incoming;
+
     private static readonly JsonSerializerOptions ReadOpts = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -395,6 +454,14 @@ public sealed partial class ConfigStore(string path)
         AgentConfig cfg;
         try { cfg = JsonSerializer.Deserialize<AgentConfig>(json, ReadOpts) ?? throw new JsonException("empty"); }
         catch (JsonException ex) { return "Invalid JSON: " + ex.Message; }
+
+        // Preserve secrets that come back masked (****...) from the settings UI
+        var current = Get();
+        cfg.Lan.Token = PreserveSecret(cfg.Lan.Token, current.Lan.Token);
+        cfg.Lan.WebhookToken = PreserveSecret(cfg.Lan.WebhookToken, current.Lan.WebhookToken);
+        cfg.HomeAssistant.Token = PreserveSecret(cfg.HomeAssistant.Token, current.HomeAssistant.Token);
+        cfg.Obs.Password = PreserveSecret(cfg.Obs.Password, current.Obs.Password);
+        cfg.Cursor.ApiKey = PreserveSecret(cfg.Cursor.ApiKey, current.Cursor.ApiKey);
 
         cfg = Normalize(cfg);
         foreach (var s in cfg.Shortcuts)
