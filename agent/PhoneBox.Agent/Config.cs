@@ -65,6 +65,55 @@ public sealed class AgentConfig
         charge = new { Charge.Enabled, Charge.Min, Charge.Max },
     };
 
+    /// <summary>Masks secrets (API keys, tokens, passwords) for the settings UI. Shows only last 4 chars or that a secret is set.</summary>
+    private static string? Mask(string? secret) =>
+        string.IsNullOrWhiteSpace(secret) ? null : secret.Length > 4 ? "****" + secret[^4..] : "****";
+
+    /// <summary>Returns a copy of this config with secrets masked for the settings web UI.</summary>
+    public AgentConfig ToSettingsView()
+    {
+        var masked = new AgentConfig
+        {
+            CodexBar = CodexBar,
+            Controls = Controls,
+            DeviceSerial = DeviceSerial,
+            AdbPath = AdbPath,
+            Weather = Weather,
+            Ping = Ping,
+            Night = Night,
+            Display = Display,
+            Lan = new LanConfig
+            {
+                Enabled = Lan.Enabled,
+                Port = Lan.Port,
+                Token = Mask(Lan.Token),
+                WebhookToken = Mask(Lan.WebhookToken),
+            },
+            Updates = Updates,
+            Cursor = new CursorConfig { ApiKey = Mask(Cursor.ApiKey) },
+            Grok = new GrokConfig { ApiKey = Mask(Grok.ApiKey) },
+            Claude = Claude,
+            Pages = Pages,
+            Shortcuts = Shortcuts,
+            Rules = Rules,
+            Charge = Charge,
+            Phones = Phones,
+            Calendars = Calendars,
+            HomeAssistant = new HomeAssistantConfig
+            {
+                Url = HomeAssistant.Url,
+                Token = Mask(HomeAssistant.Token),
+            },
+            Obs = new ObsConfig
+            {
+                Enabled = Obs.Enabled,
+                Url = Obs.Url,
+                Password = Mask(Obs.Password),
+            },
+        };
+        return masked;
+    }
+
     /// <summary>Ending processes is allowed when an enabled page has a processes widget that allows it.</summary>
     public IEnumerable<WidgetConfig> Widgets(bool enabledPagesOnly = false) => Pages.Where(p => !enabledPagesOnly || p.Enabled)
         .SelectMany(p => p.Widgets ?? []).SelectMany(w => new[] { w }.Concat(StackWidgets.Children(w).Where(c => c.Enabled)

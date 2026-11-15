@@ -439,6 +439,23 @@ dd { margin: 0; word-break: break-all; }
       </div>
 
       <div class="card">
+        <h3>AI Services</h3>
+        <p class="hint" style="margin:0 0 12px">API keys for AI quota monitoring (quotas widget) and Cursor Cloud Agents widget. These keys stay on this computer and are never sent to the phone.</p>
+        <div class="grid2">
+          <div class="field">
+            <label>Cursor API key</label>
+            <input type="password" data-bind="cursor.apiKey" autocomplete="off" placeholder="cur_...">
+            <span class="hint">From <a href="https://cursor.com/dashboard" target="_blank" rel="noopener">cursor.com/dashboard</a> › Integrations › API keys</span>
+          </div>
+          <div class="field">
+            <label>xAI API key (Grok)</label>
+            <input type="password" data-bind="grok.apiKey" autocomplete="off" placeholder="xai-...">
+            <span class="hint">From <a href="https://console.x.ai" target="_blank" rel="noopener">console.x.ai</a></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
         <h3>Night mode</h3>
         <div class="row" style="margin-bottom:12px"><label class="switch"><input type="checkbox" data-bind="night.enabled"><span></span></label> Dim the screen at night and show only the clock</div>
         <div class="grid2">
@@ -2361,7 +2378,7 @@ async function load() {
   const res = await fetch('/api/settings');
   cfgVersion = res.headers.get('X-Config-Version');
   cfg = await res.json();
-  cfg.pages ??= []; cfg.shortcuts ??= []; cfg.rules ??= []; cfg.display ??= {}; cfg.night ??= {}; cfg.weather ??= {}; cfg.lan ??= { enabled: false, port: 8766 }; cfg.updates ??= { auto: true, repo: 'ersinkoc/phonebox' }; cfg.claude ??= { phoneApprovals: true, timeoutSec: 90, onlyWhenAway: false };
+  cfg.pages ??= []; cfg.shortcuts ??= []; cfg.rules ??= []; cfg.display ??= {}; cfg.night ??= {}; cfg.weather ??= {}; cfg.lan ??= { enabled: false, port: 8766 }; cfg.updates ??= { auto: true, repo: 'ersinkoc/phonebox' }; cfg.claude ??= { phoneApprovals: true, timeoutSec: 90, onlyWhenAway: false }; cfg.cursor ??= {}; cfg.grok ??= {};
   cfg.codexBar ??= { providers: ['claude', 'codex', 'antigravity'], rotate: true, pageSize: 2, rotateInterval: 8 };
   for (const [k, v] of Object.entries({ hour12: false, idleReturnSec: 90, switchCountdownSec: 3, touchGraceSec: 20, minDwellSec: 15, holdMaxMin: 30, keepAwake: true })) cfg.display[k] ??= v;
   cfg.charge ??= { enabled: false, min: 50, max: 80, method: 'ha' };

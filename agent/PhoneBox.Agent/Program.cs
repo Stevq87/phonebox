@@ -268,7 +268,7 @@ app.MapGet("/favicon.ico", () => AppPaths.Resource("phonebox.ico") is { } s ? Re
 // The version lets the settings page save only over what it loaded (X-Config-Version, see ConfigStore.Save).
 app.MapGet("/api/settings", (ConfigStore cfg, HttpResponse res) =>
 {
-    var json = JsonSerializer.Serialize(cfg.Get(), ConfigStore.WriteOpts);
+    var json = JsonSerializer.Serialize(cfg.Get().ToSettingsView(), ConfigStore.WriteOpts);
     res.Headers["X-Config-Version"] = cfg.Version.ToString();
     return Results.Text(json, "application/json; charset=utf-8");
 });
