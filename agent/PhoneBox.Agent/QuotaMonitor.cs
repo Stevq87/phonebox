@@ -39,13 +39,9 @@ public sealed partial class QuotaMonitor(ConfigStore config, ILogger<QuotaMonito
     private volatile QuotaProvider? _claude;
     private volatile QuotaProvider? _codex;
     private volatile QuotaProvider? _antigravity;
-    private volatile QuotaProvider? _cursor;
-    private volatile QuotaProvider? _grok;
     private long _nextClaude;
     private long _nextCodexBar;
     private long _nextAntigravity;
-    private long _nextCursor;
-    private long _nextGrok;
     private volatile IReadOnlyList<QuotaProvider> _external = [];
     private volatile QuotaOverview? _overview;
 
@@ -60,12 +56,12 @@ public sealed partial class QuotaMonitor(ConfigStore config, ILogger<QuotaMonito
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var external = _external;
-        var core = new[] { "claude", "codex", "antigravity", "cursor", "grokbot" }
-            .Select(id => CodexBar.Select(id == "claude" ? _claude : id == "codex" ? _codex : id == "antigravity" ? _antigravity : id == "cursor" ? _cursor : _grok,
+        var core = new[] { "claude", "codex", "antigravity" }
+            .Select(id => CodexBar.Select(id == "claude" ? _claude : id == "codex" ? _codex : _antigravity,
                 external.FirstOrDefault(p => p.Id == id), now))
             .OfType<QuotaProvider>();
         var extra = external
-            .Where(p => p.Id is not ("claude" or "codex" or "antigravity" or "cursor" or "grokbot"))
+            .Where(p => p.Id is not ("claude" or "codex" or "antigravity"))
             .Select(p => CodexBar.Select(null, p, now))
             .OfType<QuotaProvider>();
         return core.Concat(extra).Select(p => Rolled(p, now)).ToList();
@@ -193,20 +189,6 @@ public sealed partial class QuotaMonitor(ConfigStore config, ILogger<QuotaMonito
                 var ok = await RefreshClaude(ct);
                 _nextClaude = Environment.TickCount64 + (ok ? 180_000 : 60_000);
             }
-
-            if (Environment.TickCount64 >= _nextCursor)
-            {
-                // Every 3 minutes when healthy; retry after 1 minute on errors.
-                var ok = await RefreshCursor(ct);
-                _nextCursor = Environment.TickCount64 + (ok ? 180_000 : 60_000);
-            }
-
-            if (Environment.TickCount64 >= _nextGrok)
-            {
-                // Every 3 minutes when healthy; retry after 1 minute on errors.
-                var ok = await RefreshGrok(ct);
-                _nextGrok = Environment.TickCount64 + (ok ? 180_000 : 60_000);
-            }
             await Wake.Delay(TimeSpan.FromSeconds(30), ct);
         }
     }
@@ -317,228 +299,6 @@ public sealed partial class QuotaMonitor(ConfigStore config, ILogger<QuotaMonito
 
     [GeneratedRegex(@"max_(\d+x)")]
     private static partial Regex MaxTier();
-
-    // ------------------------------------------------------------------ Cursor
-    private async Task<bool> RefreshCursor(CancellationToken ct)
-    {
-        var apiKey = config?.Get().Cursor.ApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey)) { _cursor = null; return true; }
-
-        string plan = "Cursor";
-        try
-        {
-            // Try v1 usage endpoint first
-            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.cursor.com/v1/usage");
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            
-            using var res = await _http.SendAsync(req, ct);
-            if (!res.IsSuccessStatusCode)
-            {
-                var error = $"Could not fetch quota (HTTP {(int)res.StatusCode})";
-                _cursor = _cursor is { Limits.Count: > 0 } prev ? prev with { Plan = plan, Error = error }
-                    : new QuotaProvider("cursor", "Cursor", plan, [], null, null, error);
-                return false;
-            }
-
-            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
-            var root = doc.RootElement;
-            
-            // Try to extract plan info
-            if (root.TryGetProperty("subscription", out var sub))
-            {
-                plan = Str(sub, "tier") ?? Str(sub, "plan") ?? "Cursor";
-                if (plan != "Cursor") plan = "Cursor " + plan;
-            }
-            
-            var limits = ParseCursorLimits(root);
-            _cursor = new QuotaProvider("cursor", "Cursor", plan, limits,
-                null, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 
-                limits.Count == 0 ? "No usage data available" : null);
-            return true;
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            // Usage endpoint doesn't exist
-            _cursor = new QuotaProvider("cursor", "Cursor", plan, [], null, null, 
-                "Usage API not available");
-            return false;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex)
-        {
-            log.LogDebug("cursor quota: {Msg}", ex.Message);
-            _cursor = _cursor is { Limits.Count: > 0 } prev ? prev with { Error = "Could not fetch quota: " + ex.Message }
-                : new QuotaProvider("cursor", "Cursor", plan, [], null, null, "Could not fetch quota: " + ex.Message);
-            return false;
-        }
-    }
-
-    private static List<QuotaLimit> ParseCursorLimits(JsonElement root)
-    {
-        var list = new List<QuotaLimit>();
-        
-        // Try to parse usage/limits structure (similar to Claude)
-        if (root.TryGetProperty("limits", out var limits) && limits.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var l in limits.EnumerateArray())
-            {
-                var label = Str(l, "name") ?? Str(l, "type") ?? "Limit";
-                var used = Num(l, "used") ?? 0;
-                var total = Num(l, "total") ?? Num(l, "limit") ?? 0;
-                var percent = total > 0 ? (used / total) * 100 : 0;
-                var resetsAt = Iso(Str(l, "resets_at")) ?? Iso(Str(l, "reset_at"));
-                
-                list.Add(new QuotaLimit(label, percent, resetsAt, null, 
-                    percent >= 95 ? "error" : percent >= 80 ? "warning" : "normal"));
-            }
-        }
-        // Try requests/tokens structure
-        else if (root.TryGetProperty("usage", out var usage))
-        {
-            foreach (var prop in new[] { "requests", "tokens", "fast_requests", "slow_requests" })
-            {
-                if (usage.TryGetProperty(prop, out var u) && u.ValueKind == JsonValueKind.Object)
-                {
-                    var used = Num(u, "used") ?? Num(u, "count") ?? 0;
-                    var limit = Num(u, "limit") ?? Num(u, "total") ?? 0;
-                    if (limit > 0)
-                    {
-                        var percent = (used / limit) * 100;
-                        var label = prop.Replace("_", " ");
-                        label = char.ToUpper(label[0]) + label[1..];
-                        list.Add(new QuotaLimit(label, percent, Iso(Str(u, "resets_at")), null,
-                            percent >= 95 ? "error" : percent >= 80 ? "warning" : "normal"));
-                    }
-                }
-            }
-        }
-        
-        return list;
-    }
-
-    // ------------------------------------------------------------------ Grok (xAI)
-    private async Task<bool> RefreshGrok(CancellationToken ct)
-    {
-        var apiKey = config?.Get().Grok.ApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey)) { _grok = null; return true; }
-
-        string plan = "Grok";
-        try
-        {
-            // xAI uses OpenAI-compatible API structure
-            // Try common usage endpoints
-            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.x.ai/v1/usage");
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            
-            using var res = await _http.SendAsync(req, ct);
-            if (!res.IsSuccessStatusCode)
-            {
-                var error = $"Could not fetch quota (HTTP {(int)res.StatusCode})";
-                _grok = _grok is { Limits.Count: > 0 } prev ? prev with { Plan = plan, Error = error }
-                    : new QuotaProvider("grokbot", "Grok", plan, [], null, null, error);
-                return false;
-            }
-
-            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
-            var root = doc.RootElement;
-            
-            // Try to extract plan/tier info
-            if (root.TryGetProperty("plan", out var planProp))
-            {
-                plan = Str(planProp, "name") ?? Str(planProp, "tier") ?? "Grok";
-                if (plan != "Grok") plan = "Grok " + plan;
-            }
-            else if (root.TryGetProperty("subscription", out var sub))
-            {
-                plan = Str(sub, "tier") ?? Str(sub, "plan") ?? "Grok";
-                if (plan != "Grok") plan = "Grok " + plan;
-            }
-            
-            var limits = ParseGrokLimits(root);
-            _grok = new QuotaProvider("grokbot", "Grok", plan, limits,
-                null, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 
-                limits.Count == 0 ? "No usage data available" : null);
-            return true;
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            // Usage endpoint doesn't exist
-            _grok = new QuotaProvider("grokbot", "Grok", plan, [], null, null, 
-                "Usage API not available");
-            return false;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex)
-        {
-            log.LogDebug("grok quota: {Msg}", ex.Message);
-            _grok = _grok is { Limits.Count: > 0 } prev ? prev with { Error = "Could not fetch quota: " + ex.Message }
-                : new QuotaProvider("grokbot", "Grok", plan, [], null, null, "Could not fetch quota: " + ex.Message);
-            return false;
-        }
-    }
-
-    private static List<QuotaLimit> ParseGrokLimits(JsonElement root)
-    {
-        var list = new List<QuotaLimit>();
-        
-        // Try OpenAI-style usage structure
-        if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in data.EnumerateArray())
-            {
-                var id = Str(item, "id") ?? "Limit";
-                var used = Num(item, "used") ?? Num(item, "usage") ?? 0;
-                var limit = Num(item, "limit") ?? Num(item, "quota") ?? 0;
-                if (limit > 0)
-                {
-                    var percent = (used / limit) * 100;
-                    var resetsAt = Iso(Str(item, "reset_at")) ?? Iso(Str(item, "resets_at"));
-                    list.Add(new QuotaLimit(id, percent, resetsAt, null,
-                        percent >= 95 ? "error" : percent >= 80 ? "warning" : "normal"));
-                }
-            }
-        }
-        // Try simple usage object structure
-        else if (root.TryGetProperty("usage", out var usage))
-        {
-            if (usage.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var prop in usage.EnumerateObject())
-                {
-                    if (prop.Value.ValueKind == JsonValueKind.Object)
-                    {
-                        var used = Num(prop.Value, "used") ?? Num(prop.Value, "count") ?? 0;
-                        var limit = Num(prop.Value, "limit") ?? Num(prop.Value, "quota") ?? 0;
-                        if (limit > 0)
-                        {
-                            var percent = (used / limit) * 100;
-                            var label = prop.Name.Replace("_", " ");
-                            label = char.ToUpper(label[0]) + label[1..];
-                            list.Add(new QuotaLimit(label, percent, Iso(Str(prop.Value, "resets_at")), null,
-                                percent >= 95 ? "error" : percent >= 80 ? "warning" : "normal"));
-                        }
-                    }
-                }
-            }
-        }
-        // Try direct limits array
-        else if (root.TryGetProperty("limits", out var limits) && limits.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var l in limits.EnumerateArray())
-            {
-                var label = Str(l, "name") ?? Str(l, "type") ?? "Limit";
-                var used = Num(l, "used") ?? 0;
-                var total = Num(l, "total") ?? Num(l, "limit") ?? 0;
-                var percent = total > 0 ? (used / total) * 100 : 0;
-                var resetsAt = Iso(Str(l, "resets_at")) ?? Iso(Str(l, "reset_at"));
-                
-                list.Add(new QuotaLimit(label, percent, resetsAt, null, 
-                    percent >= 95 ? "error" : percent >= 80 ? "warning" : "normal"));
-            }
-        }
-        
-        return list;
-    }
 
     // ------------------------------------------------------------------ Codex
     private static QuotaProvider? ReadCodex()

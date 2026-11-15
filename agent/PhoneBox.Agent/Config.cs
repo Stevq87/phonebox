@@ -18,7 +18,6 @@ public sealed class AgentConfig
     public LanConfig Lan { get; set; } = new();
     public UpdateConfig Updates { get; set; } = new();
     public CursorConfig Cursor { get; set; } = new();
-    public GrokConfig Grok { get; set; } = new();
     public ClaudeConfig Claude { get; set; } = new();
     public List<PageConfig> Pages { get; set; } = [];
     public List<Shortcut> Shortcuts { get; set; } = [];
@@ -91,7 +90,6 @@ public sealed class AgentConfig
             },
             Updates = Updates,
             Cursor = new CursorConfig { ApiKey = Mask(Cursor.ApiKey) },
-            Grok = new GrokConfig { ApiKey = Mask(Grok.ApiKey) },
             Claude = Claude,
             Pages = Pages,
             Shortcuts = Shortcuts,
@@ -217,12 +215,6 @@ public sealed class UpdateConfig
 public sealed class CursorConfig
 {
     /// <summary>Cursor Cloud API key (from cursor.com dashboard › Integrations › API keys). Never logged or sent to the phone.</summary>
-    public string? ApiKey { get; set; }
-}
-
-public sealed class GrokConfig
-{
-    /// <summary>xAI API key (from console.x.ai). Never logged or sent to the phone.</summary>
     public string? ApiKey { get; set; }
 }
 
@@ -466,7 +458,6 @@ public sealed partial class ConfigStore(string path)
         cfg.HomeAssistant.Token = PreserveSecret(cfg.HomeAssistant.Token, current.HomeAssistant.Token);
         cfg.Obs.Password = PreserveSecret(cfg.Obs.Password, current.Obs.Password);
         cfg.Cursor.ApiKey = PreserveSecret(cfg.Cursor.ApiKey, current.Cursor.ApiKey);
-        cfg.Grok.ApiKey = PreserveSecret(cfg.Grok.ApiKey, current.Grok.ApiKey);
 
         cfg = Normalize(cfg);
         foreach (var s in cfg.Shortcuts)

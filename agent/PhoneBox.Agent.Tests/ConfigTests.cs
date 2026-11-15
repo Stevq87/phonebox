@@ -289,8 +289,7 @@ public class SecretMaskingTests
                 "lan": { "token": "secret-lan-token-12345", "webhookToken": "secret-webhook-67890" },
                 "homeAssistant": { "token": "hass-token-abcdef" },
                 "obs": { "password": "obs-pass-xyz" },
-                "cursor": { "apiKey": "cur_realkey123456" },
-                "grok": { "apiKey": "xai-grokkey789" }
+                "cursor": { "apiKey": "cur_realkey123456" }
             }
             """;
             Assert.Null(store.Save(saveJson));
@@ -304,7 +303,6 @@ public class SecretMaskingTests
             Assert.Equal("****cdef", masked.HomeAssistant.Token);
             Assert.Equal("****-xyz", masked.Obs.Password);
             Assert.Equal("****3456", masked.Cursor.ApiKey);
-            Assert.Equal("****y789", masked.Grok.ApiKey);
 
             // Short secrets should be fully masked
             var shortSecret = store.Get();
@@ -328,7 +326,6 @@ public class SecretMaskingTests
                 "homeAssistant": { "url": "http://ha.local", "token": "hass-token-abcdef" },
                 "obs": { "enabled": true, "url": "ws://localhost:4455", "password": "obs-pass-xyz" },
                 "cursor": { "apiKey": "cur_realkey123456" },
-                "grok": { "apiKey": "xai-grokkey789" },
                 "weather": { "city": "Test City", "lat": 50.0, "lon": 10.0 }
             }
             """;
@@ -338,7 +335,6 @@ public class SecretMaskingTests
             var originalHaToken = store.Get().HomeAssistant.Token;
             var originalObsPassword = store.Get().Obs.Password;
             var originalCursorKey = store.Get().Cursor.ApiKey;
-            var originalGrokKey = store.Get().Grok.ApiKey;
 
             // Simulate the settings UI round-trip: get masked config, modify non-secret field, save back
             var masked = store.Get().ToSettingsView();
@@ -353,7 +349,6 @@ public class SecretMaskingTests
                 "homeAssistant": { "url": "http://ha.local", "token": "{{masked.HomeAssistant.Token}}" },
                 "obs": { "enabled": true, "url": "ws://localhost:4455", "password": "{{masked.Obs.Password}}" },
                 "cursor": { "apiKey": "{{masked.Cursor.ApiKey}}" },
-                "grok": { "apiKey": "{{masked.Grok.ApiKey}}" },
                 "weather": { "city": "Modified City", "lat": 50.0, "lon": 10.0 }
             }
             """;
@@ -368,7 +363,6 @@ public class SecretMaskingTests
             Assert.Equal(originalHaToken, store.Get().HomeAssistant.Token);
             Assert.Equal(originalObsPassword, store.Get().Obs.Password);
             Assert.Equal(originalCursorKey, store.Get().Cursor.ApiKey);
-            Assert.Equal(originalGrokKey, store.Get().Grok.ApiKey);
         }
         finally { File.Delete(path); File.Delete(path + ".bak"); }
     }
@@ -382,8 +376,7 @@ public class SecretMaskingTests
             // Save initial config
             var initial = """
             {
-                "cursor": { "apiKey": "cur_oldkey123" },
-                "grok": { "apiKey": "xai-oldkey456" }
+                "cursor": { "apiKey": "cur_oldkey123" }
             }
             """;
             Assert.Null(store.Save(initial));
@@ -391,15 +384,13 @@ public class SecretMaskingTests
             // Save with new real secrets (not masked)
             var updated = """
             {
-                "cursor": { "apiKey": "cur_newkey789" },
-                "grok": { "apiKey": "xai-newkey012" }
+                "cursor": { "apiKey": "cur_newkey789" }
             }
             """;
             Assert.Null(store.Save(updated));
 
             // New values should be stored
             Assert.Equal("cur_newkey789", store.Get().Cursor.ApiKey);
-            Assert.Equal("xai-newkey012", store.Get().Grok.ApiKey);
         }
         finally { File.Delete(path); File.Delete(path + ".bak"); }
     }
@@ -413,8 +404,7 @@ public class SecretMaskingTests
             // Save initial config
             var initial = """
             {
-                "cursor": { "apiKey": "cur_original123" },
-                "grok": { "apiKey": "xai-original456" }
+                "cursor": { "apiKey": "cur_original123" }
             }
             """;
             Assert.Null(store.Save(initial));
@@ -422,15 +412,13 @@ public class SecretMaskingTests
             // Save with empty/null secrets
             var updated = """
             {
-                "cursor": { "apiKey": "" },
-                "grok": { "apiKey": null }
+                "cursor": { "apiKey": "" }
             }
             """;
             Assert.Null(store.Save(updated));
 
             // Original values should be preserved
             Assert.Equal("cur_original123", store.Get().Cursor.ApiKey);
-            Assert.Equal("xai-original456", store.Get().Grok.ApiKey);
         }
         finally { File.Delete(path); File.Delete(path + ".bak"); }
     }
@@ -444,28 +432,24 @@ public class SecretMaskingTests
             // Save initial config with secrets
             var initial = """
             {
-                "cursor": { "apiKey": "cur_toDelete123" },
-                "grok": { "apiKey": "xai-toDelete456" }
+                "cursor": { "apiKey": "cur_toDelete123" }
             }
             """;
             Assert.Null(store.Save(initial));
             Assert.NotNull(store.Get().Cursor.ApiKey);
-            Assert.NotNull(store.Get().Grok.ApiKey);
 
             // To actually clear a secret, the UI should send a sentinel value
             // For now, empty/null preserves the existing value
             // This test documents current behavior
             var cleared = """
             {
-                "cursor": { "apiKey": "" },
-                "grok": { "apiKey": null }
+                "cursor": { "apiKey": "" }
             }
             """;
             Assert.Null(store.Save(cleared));
             
             // Current behavior: empty/null preserves existing
             Assert.Equal("cur_toDelete123", store.Get().Cursor.ApiKey);
-            Assert.Equal("xai-toDelete456", store.Get().Grok.ApiKey);
         }
         finally { File.Delete(path); File.Delete(path + ".bak"); }
     }
