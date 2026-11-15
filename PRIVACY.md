@@ -11,6 +11,8 @@ Last updated: 2026-11-15 (PhoneBox 0.9.6).
 - **Settings and layouts**: `config.json` in `%APPDATA%\PhoneBox` (Windows), `~/.config/PhoneBox` (Linux) or
   `~/Library/Application Support/PhoneBox` (macOS), plus `data.json` (pushed values and notifications) next to it.
   On macOS and Linux these files are readable only by your user (0600).
+- **Last Claude quota reading**: `claude-quota.json` next to the log (usage percentages and reset times, no token),
+  so the panel can show the last values after a restart.
 - **Log**: `agent.log` in `%LOCALAPPDATA%\PhoneBox` (Windows), `~/.local/share/PhoneBox` (Linux) or
   `~/Library/Application Support/PhoneBox` (macOS).
 - **Phone app**: caches (weather, rates, widget state) in its own app storage. The app asks for two permissions only:
@@ -50,6 +52,7 @@ identifies your GitHub account to GitHub.
 | Crypto widget (phone) | `api.coingecko.com` | The coins and currency you chose |
 | Internet radio | `*.api.radio-browser.info`, `opml.radiotime.com`, the station's own stream server and logo host | Station searches, the station you play and its logo request |
 | Spotify control | `accounts.spotify.com`, `api.spotify.com` | Your own Spotify app's client ID and the sign-in you approve; the token is saved in `config.json.spotify.json` next to your settings |
+| Pairing over Wi-Fi without USB | `ersinkoc.github.io` (the page the QR code opens), then your computer | GitHub Pages serves the page and sees your IP address; the pairing details are after `#` in the link, which browsers never send, and the page removes them from the history. The phone then sends the one-time code only to your computer, over TLS pinned to its certificate |
 | Calendars | The iCal addresses you add | The request to that address |
 | Home Assistant | Your Home Assistant server | The access token you enter |
 | Image widget | The image address you enter | The request to that address |
@@ -57,6 +60,7 @@ identifies your GitHub account to GitHub.
 | OSC controls (Control Deck) | The OSC host and port you configure, over UDP | The control value |
 | Antigravity quota through its CLI | Whatever the Antigravity CLI contacts with its own sign-in (PhoneBox only starts it) | Decided by the CLI |
 | Webhooks | Inbound only: scripts and services you set up post to the agent | Nothing is sent out |
+| Setup scripts (`setup.ps1`, `setup.sh`), when you run them | `raw.githubusercontent.com` (the script), `api.github.com` and `github.com` (release info and downloads); only for what is missing and after asking: winget, Homebrew or your distribution's package servers, or `dl.google.com` (adb) | The requests themselves; nothing about you or the computer. With `gh` 2.93.0 or later signed in, the GitHub CLI checks the build provenance with its own sign-in, which also contacts `tuf-repo.github.com` and Sigstore's servers (`tuf-repo-cdn.sigstore.dev`) |
 
 When the phone has no internet connection of its own, the agent can fetch the public widget feeds above (Open-Meteo,
 Hacker News, Frankfurter, CoinGecko) on its behalf. Only those hosts are allowed, and the same data is sent.

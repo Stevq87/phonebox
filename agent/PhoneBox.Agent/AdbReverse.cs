@@ -111,12 +111,13 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
         foreach (var d in devices)
         {
             var list = await Adb(adb, $"-s {d} reverse --list", ct);
-            if (list.Contains(Rule) && !_missingApp.Contains(d)) continue;
+            var ruled = HasOwnRule(list);
+            if (ruled && !_missingApp.Contains(d)) continue;
             // is the app there at all? (the agent may have been installed on its own, with winget or Scoop)
             var installed = (await Adb(adb, $"-s {d} shell pm path net.oxog.phonebox.deskpanel", ct, anyExit: true)).Contains("package:");
             _missingApp = installed ? _missingApp.Where(x => x != d).ToArray() : _missingApp.Union([d]).ToArray();
             if (!installed) { Report($"{d}: the PhoneBox app is not installed (Settings › General › Install the phone app)"); continue; }
-            if (list.Contains(Rule)) continue;
+            if (ruled) continue;
             await Adb(adb, $"-s {d} reverse {Rule} {TargetRule}", ct);
             // A newly plugged-in phone must not light up while the computer is locked.
             if (cfg.Get().Display.FollowComputerLock && OperatingSystem.IsMacOS())
@@ -135,7 +136,8 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
         {
             foreach (var d in devices.Where(d => !_homeSet.Contains(d)))
             {
-                var r = await Adb(adb, $"-s {d} shell cmd package set-home-activity {HomeAlias}", ct);
+                // Android answers a refusal with exit code 1; that must not end the round for the other phones and keep-awake.
+                var r = await Adb(adb, $"-s {d} shell cmd package set-home-activity {HomeAlias}", ct, anyExit: true);
                 if (!r.Contains("Success")) continue; // the app has not enabled its home entry yet; try again shortly
                 _homeSet.Add(d);
                 log.LogInformation("{Device}: PhoneBox is now the home app", d);
@@ -160,6 +162,14 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
         _awakeSet.IntersectWith(devices);
         Report($"phone connected: {Devices}");
     }
+
+    /// <summary>
+    /// True when "reverse --list" has this agent's rule: phone tcp:8765 to this agent's port. A rule left by an agent on
+    /// another port (--port) points the phone at a dead port; lines read "&lt;transport&gt; &lt;phone&gt; &lt;computer&gt;".
+    /// </summary>
+    private bool HasOwnRule(string list) => list.Split('\n')
+        .Select(l => l.Split([' ', '\t', '\r'], StringSplitOptions.RemoveEmptyEntries))
+        .Any(p => p.Length >= 2 && p[^2] == Rule && p[^1] == TargetRule);
 
     private void SetDevices(string[] devices)
     {
@@ -189,7 +199,7 @@ public sealed class AdbReverse(ConfigStore cfg, ILogger<AdbReverse> log, AgentEn
             return candidates.FirstOrDefault(File.Exists);
         }
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
-            candidates.Add(Path.Combine(dir.Trim(), "adb.exe"));
+            candidates.Add(Path.Combine(dir.Trim().Trim('"'), "adb.exe")); // PATH entries may be quoted
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         candidates.Add(Path.Combine(local, "Android", "Sdk", "platform-tools", "adb.exe"));
         var winget = Path.Combine(local, "Microsoft", "WinGet", "Packages");

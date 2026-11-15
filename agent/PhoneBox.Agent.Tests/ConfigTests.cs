@@ -26,6 +26,17 @@ public class ConfigTests
     }
 
     [Fact]
+    public void BurnInProtectionIsOffByDefaultAndTheDimTimeIsClamped()
+    {
+        var defaults = Load("{}").Display;
+        Assert.False(defaults.PixelShift);
+        Assert.Equal(0, defaults.IdleDimMin);
+        Assert.Equal(1440, Load("""{ "display": { "pixelShift": true, "idleDimMin": 99999 } }""").Display.IdleDimMin);
+        Assert.Equal(0, Load("""{ "display": { "idleDimMin": -5 } }""").Display.IdleDimMin);
+        Assert.True(Load("""{ "display": { "pixelShift": true } }""").Display.PixelShift);
+    }
+
+    [Fact]
     public void TemplatesExpandIntoWidgets()
     {
         var c = Load("""{ "pages": [ { "template": "music" }, { "template": "music" } ] }""");
@@ -128,6 +139,11 @@ public class LanTests
     [InlineData("/api/push/temperature", true)]
     [InlineData("/api/settings", false)]
     [InlineData("/api/pair", false)]
+    [InlineData("/api/pair/claim", true)]
+    [InlineData("/api/pair/start", false)]
+    [InlineData("/api/pair/cancel", false)]
+    [InlineData("/api/pair/status", false)]
+    [InlineData("/api/pair/claim/x", false)]
     [InlineData("/api/shortcuts/test", false)]
     [InlineData("/api/claude/hook", false)]
     [InlineData("/api/obs-test", false)]

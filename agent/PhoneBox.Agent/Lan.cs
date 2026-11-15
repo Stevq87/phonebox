@@ -80,7 +80,13 @@ public static class Lan
         || path.StartsWithSegments("/api/state") || path.StartsWithSegments("/api/config") || path.StartsWithSegments("/api/art")
         || path.StartsWithSegments("/api/media") || path.StartsWithSegments("/api/volume") || path.StartsWithSegments("/api/quotas")
         || path.StartsWithSegments("/api/work") || path.StartsWithSegments("/api/procs") || path.StartsWithSegments("/api/run")
-        || path.StartsWithSegments("/api/widget") || path.StartsWithSegments("/api/calendar") || path.StartsWithSegments("/api/docker") || path.StartsWithSegments("/api/obs") || path.StartsWithSegments("/api/batteries") || path.StartsWithSegments("/api/ha/states") || path.StartsWithSegments("/api/ha/toggle") || path.StartsWithSegments("/api/approvals") || path.StartsWithSegments("/api/rules/pause") || path.StartsWithSegments("/api/phone/battery") || path.StartsWithSegments("/api/stream") || IsWebhook(path);
+        || path.StartsWithSegments("/api/widget") || path.StartsWithSegments("/api/calendar") || path.StartsWithSegments("/api/docker") || path.StartsWithSegments("/api/obs") || path.StartsWithSegments("/api/batteries") || path.StartsWithSegments("/api/ha/states") || path.StartsWithSegments("/api/ha/toggle") || path.StartsWithSegments("/api/approvals") || path.StartsWithSegments("/api/rules/pause") || path.StartsWithSegments("/api/phone/battery") || path.StartsWithSegments("/api/stream") || path == "/api/pair/claim" || IsWebhook(path);
+
+    /// <summary>
+    /// The one Wi-Fi path that needs no key: a phone pairing without USB trades a one-time code for it (see
+    /// <see cref="PairingCodes"/>). The endpoint checks the code; everything else still needs the paired key.
+    /// </summary>
+    public static bool IsPairingClaim(string method, PathString path) => method == "POST" && path == "/api/pair/claim";
 
     /// <summary>The webhook API: other machines on the network (or Tailscale) may push data with the same token.</summary>
     public static bool IsWebhook(PathString path) =>

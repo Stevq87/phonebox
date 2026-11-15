@@ -106,6 +106,9 @@ internal static partial class RadioBrowserDirectory
                 using var res = await SendPublicGetAsync(http, uri, attemptCts.Token);
                 if (res is null || !res.IsSuccessStatusCode) continue;
                 var body = await res.Content.ReadAsStringAsync(attemptCts.Token);
+                // a mirror that answers 200 with something else (a maintenance page, an error object) is skipped like
+                // a failing one, and does not become the preferred mirror
+                if (!IsJsonArray(body)) continue;
                 if (client is null) _preferredMirror = host;
                 return body;
             }
@@ -119,6 +122,17 @@ internal static partial class RadioBrowserDirectory
             }
         }
         throw new RadioDirectoryUnavailableException("Could not reach radio-browser.info mirrors. Check your internet connection or try again shortly.");
+    }
+
+    // Every directory call used here (countries, station search) answers with a JSON array.
+    private static bool IsJsonArray(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Array;
+        }
+        catch (JsonException) { return false; }
     }
 
     /// <summary>Fetches countries with active radio stations from radio-browser.info.</summary>

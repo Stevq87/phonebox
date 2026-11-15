@@ -57,6 +57,7 @@
       weather: { city: 'Tallinn', lat: 59.437, lon: 24.745 },
       night: { enabled: false, start: '00:30', end: '07:30', brightness: 0.02 },
       display: { appearance: null, showSeconds: true, hour12: false, idleReturnSec: 0, vibrate: true, volumeKeys: true, orientation: 'landscape', theme: 'default', accent: '#2dd4bf',
+        pixelShift: false, idleDimMin: 0,
         artTint: true, autoBrightness: false, nightWhenDark: false, proximityWake: true, pin: false, homeScreen: false, keepAwake: true, followComputerLock: false,
         homePage: null, switchCountdownSec: 3, touchGraceSec: 20, minDwellSec: 15, holdMaxMin: 30 },
       lan: { enabled: true, port: 8766, token: 'demo', webhookToken: 'demo-webhook-key' },
@@ -596,6 +597,17 @@
       return json(await config(), 200, { 'X-Config-Version': String(cfgVersion()) });
     }
     if (path === '/api/info') return json({ version: VERSION, os: 'windows', configPath: 'browser storage (demo)', logPath: '—', adb: 'demo', connected: true, devices: ['DEMO0001'], appMissing: [], usbProblem: null, webviewProblem: null });
+    // Pairing over Wi-Fi: a placeholder pattern instead of real QR codes (the demo has no agent to pair with)
+    if (path === '/api/pair/start' && method === 'POST') {
+      const box = (label) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"><rect width="29" height="29" fill="#fff"/>${
+        [0, 22].flatMap((x) => [0, 22].filter((y) => !(x === 22 && y === 22)).map((y) => `<rect x="${x}" y="${y}" width="7" height="7" fill="#000"/><rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="#fff"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="#000"/>`)).join('')
+      }<text x="14.5" y="16" font-size="3" text-anchor="middle" font-family="sans-serif">${label}</text></svg>`;
+      return json({ enabled: true, pc: 'DEMO-PC', hosts: ['192.168.1.20', '100.101.102.103'], port: 8766, expiresAt: now() + 300e3, claims: 0, attempt: 1, check: 'DE40 0001',
+        link: 'https://ersinkoc.github.io/phonebox/pair/#v=1&pc=DEMO-PC&fp=demo&port=8766&h=192.168.1.20&c=demo',
+        qr: box('demo pairing'), app: 'https://github.com/ersinkoc/phonebox/releases/latest', appQr: box('demo app') });
+    }
+    if (path === '/api/pair/status') return json({ claims: 0 });
+    if (path === '/api/pair/cancel' && method === 'POST') return json({});
     if (path === '/api/lan') return json({ configured: true, active: true, port: 8766, restartNeeded: false, hosts: ['192.168.1.20', '100.101.102.103'], fingerprint: 'demo' });
     if (path === '/api/update') return json({ status: { agentVersion: VERSION, appVersion: VERSION, latest: VERSION, releaseUrl: 'https://github.com/ersinkoc/phonebox/releases/latest', agentUpdate: false, appUpdate: false,
       lastCheck: now() - 3600e3, state: 'idle', error: null }, auto: (await config()).updates?.auto !== false, installed: true });
@@ -639,5 +651,8 @@
     on('ask', (d) => ask(d || undefined, false));
   }
 
-  window.PhoneBoxDemo = { emit, ask, reset() { localStorage.removeItem('pb-demo-config'); store.set('pb-demo-version', cfgVersion() + 1); } };
+  window.PhoneBoxDemo = { emit, ask,
+    reset() { localStorage.removeItem('pb-demo-config'); store.set('pb-demo-version', cfgVersion() + 1); },
+    // the agent restarted: PushStore keeps events in memory only, so its counter and backlog start over
+    restart() { seq = 0; events.length = 0; } };
 })();

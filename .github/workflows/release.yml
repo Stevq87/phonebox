@@ -96,8 +96,11 @@ jobs:
           dotnet-version: 10.0.x
       - name: Unit tests
         run: dotnet test agent/PhoneBox.Agent.Tests --nologo
-      - name: Publish (framework-dependent)
-        run: dotnet publish agent/PhoneBox.Agent -c Release -f ${{ matrix.tfm }} -r ${{ matrix.rid }} --self-contained false -o out --nologo
+      # Self-contained single file: no .NET runtime to install. Not compressed (the zip is barely smaller and a
+      # compressed bundle costs about 90 MB more memory in a process that runs all day); native libraries stay
+      # loose next to the exe instead of being extracted to the temp folder at run time.
+      - name: Publish (self-contained, single file)
+        run: dotnet publish agent/PhoneBox.Agent -c Release -f ${{ matrix.tfm }} -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o out --nologo
       - name: Sign macOS apphost ad hoc
         if: startsWith(matrix.rid, 'osx-')
         run: codesign --force --sign - out/PhoneBoxAgent
@@ -183,6 +186,8 @@ jobs:
           m['version'] = v
           m['architecture']['64bit']['url'] = f'https://github.com/ersinkoc/phonebox/releases/download/v{v}/PhoneBoxAgent-{v}-win-x64.zip'
           m['architecture']['64bit']['hash'] = sha
+          # the agent is self-contained since 0.9.7: no .NET runtime to suggest
+          m.get('suggest', {}).pop('.NET Desktop Runtime 10', None)
           open(p, 'w', encoding='utf-8').write(json.dumps(m, indent=4, ensure_ascii=False) + '\n')
           PY
           python3 packaging/winget/make-manifests.py "$v" "$sha"

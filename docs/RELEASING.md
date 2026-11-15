@@ -16,6 +16,11 @@ a release or deploys Pages. Changes to Pages deployment still need a successful 
 Published releases update the Scoop bucket and generate winget manifests in a follow-up commit.
 Winget manifests are prepared for submission; generation alone does not mean the package is accepted into winget-pkgs.
 
+The agent zips are self-contained single files: each one carries its own .NET runtime, so .NET security fixes
+reach users only through a PhoneBox release. When .NET ships a fix for Kestrel, TLS or the runtime, publish a patch
+release (`setup-dotnet` with `10.0.x` picks up the newest runtime). Single-file bundles are not compressed on
+purpose: the zip is barely smaller and a compressed bundle costs about 90 MB more memory in a process that runs all day.
+
 Required GitHub Actions secrets are `PHONEBOX_KEYSTORE_BASE64`, `PHONEBOX_STORE_PASSWORD`, `PHONEBOX_KEY_ALIAS`
 and `PHONEBOX_KEY_PASSWORD`. Keep the original Android signing key: an incompatible APK must fail the update
 while preserving the installed app and its data. Never commit the key or its passwords.

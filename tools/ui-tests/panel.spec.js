@@ -91,6 +91,117 @@ test('a webhook notification shows a toast', async ({ page }) => {
   await expect(page.locator('#toast')).toContainText('main passed');
 });
 
+test('an event the agent queued while it restarted is still delivered', async ({ page }) => {
+  await page.goto('/panel/');
+  await expect(page.locator('.w').first()).toBeVisible();
+  await page.evaluate(() => {
+    window.PhoneBoxDemo.emit('notify', { title: 'One', text: 'first', level: 'ok' });
+    window.PhoneBoxDemo.emit('notify', { title: 'Two', text: 'second', level: 'ok' });
+  });
+  await expect(page.locator('#toast')).toContainText('second');
+  // the agent restarted: its event counter starts over below the phone's (PushStore keeps events in memory)
+  await page.evaluate(() => { window.PhoneBoxDemo.restart(); window.PhoneBoxDemo.emit('notify', { title: 'After', text: 'post-restart', level: 'ok' }); });
+  await expect(page.locator('#toast')).toContainText('post-restart');
+});
+
+test('the stream path also replays events the agent queued while it restarted', async ({ page }) => {
+  await page.goto('/panel/');
+  await expect(page.locator('.w').first()).toBeVisible();
+  // the phone runs on the live stream, not the poll: feed states so streaming() stays true
+  await page.evaluate(() => {
+    window.__evSeq = 5;
+    window.onAgentStream('open');
+    window.__feed = setInterval(() => window.onAgentStream('state', JSON.stringify({ ts: Date.now(), evSeq: window.__evSeq })), 500);
+  });
+  await page.waitForTimeout(1200); // a few streamed states: the panel now tracks seq 5
+  await page.evaluate(() => {
+    // the agent restarted: its counter starts over below the phone's, and an event is already queued
+    window.PhoneBoxDemo.restart();
+    window.PhoneBoxDemo.emit('notify', { title: 'Backlog', text: 'backlog event', level: 'ok' });
+    window.__evSeq = 1; // streamed states now report the restarted counter
+  });
+  await page.waitForTimeout(700); // a streamed state has armed the replay
+  // a live event arrives while the backlog is being replayed: it has to be applied after it, not before
+  await page.evaluate(() => window.onAgentStream('event', JSON.stringify({ seq: 2, kind: 'notify', data: { title: 'Live', text: 'live event', level: 'ok' } })));
+  await expect(page.locator('#toast')).toContainText('live event');
+  await expect.poll(async () => page.evaluate(async () => (await import('/panel/main.js')).D.notes.slice(0, 2).map((n) => n.title))).toEqual(['Live', 'Backlog']);
+});
+
+test('a follow-up replay merges its events with the ones still held', async ({ page }) => {
+  await page.goto('/panel/');
+  await expect(page.locator('.w').first()).toBeVisible();
+  await page.evaluate(() => {
+    window.__evSeq = 5;
+    window.onAgentStream('open');
+    window.__feed = setInterval(() => window.onAgentStream('state', JSON.stringify({ ts: Date.now(), evSeq: window.__evSeq })), 500);
+  });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    window.PhoneBoxDemo.restart();
+    window.PhoneBoxDemo.emit('notify', { title: 'Backlog', text: 'backlog event', level: 'ok' });
+  });
+  // freeze the first ?ev=0 answer at a snapshot taken before the flood: it cannot contain the flooded events
+  // (the demo answers fetch() inside the page, so the interception wraps window.fetch rather than the network)
+  await page.evaluate(() => {
+    const answer = window.fetch('/api/state?ev=0').then((r) => r.json());
+    const orig = window.fetch;
+    window.fetch = async (input, init) => {
+      const url = String(typeof input === 'string' ? input : input.url);
+      if (window.__frozen && url.includes('/api/state') && url.includes('ev=0')) {
+        const frozen = window.__frozen;
+        window.__frozen = null;
+        return new Response(JSON.stringify(await frozen), { headers: { 'Content-Type': 'application/json' } });
+      }
+      return orig(input, init);
+    };
+    window.__frozen = answer;
+  });
+  await page.evaluate(() => {
+    window.__evSeq = 1;
+    window.onAgentStream('state', JSON.stringify({ ts: Date.now(), evSeq: 1 })); // arms the replay in this same task
+    // events 2–102 arrive live and are in the agent's backlog too; the agent only retains the last 50 (53–102),
+    // so the follow-up replay returns the newer half while seqs 3–52 stay held in the buffer (2 was pushed out)
+    const push = (kind, data) => window.onAgentStream('event', JSON.stringify(window.PhoneBoxDemo.emit(kind, data)));
+    for (let i = 0; i < 50; i++) push('back', {});
+    push('back', { rule: 'r1' });                            // seq 52 — held: must run before the goto below
+    push('goto', { page: 3, rule: 'r1' });                   // seq 53 — first event the follow-up replay returns
+    for (let i = 0; i < 49; i++) push('back', {});
+    window.__evSeq = 102;                                    // streamed states now match the demo counter
+  });
+  // if the replayed goto ran first, the older back would remove it from the nav queue and the page never opens
+  // (page numbers are 1-based for the user, so page 3 shows as index 2)
+  await expect.poll(async () => page.evaluate(async () => (await import('/panel/main.js')).curPage), { timeout: 10000 }).toBe(2);
+  await page.waitForTimeout(1500); // and it has to stay open — the back must not run after it
+  await expect.poll(async () => page.evaluate(async () => (await import('/panel/main.js')).curPage)).toBe(2);
+});
+
+test('events sent before the first state of a reopened stream wait for it', async ({ page }) => {
+  await page.goto('/panel/');
+  await expect(page.locator('.w').first()).toBeVisible();
+  await page.evaluate(() => {
+    window.__evSeq = 5;
+    window.onAgentStream('open');
+    window.__feed = setInterval(() => window.onAgentStream('state', JSON.stringify({ ts: Date.now(), evSeq: window.__evSeq })), 500);
+  });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    // the stream reopened against a restarted agent: it can send an event before its first state identifies the run
+    window.onAgentStream('close');
+    window.onAgentStream('open');
+    window.PhoneBoxDemo.restart();
+    const early = window.PhoneBoxDemo.emit('notify', { title: 'Early', text: 'before the first state', level: 'ok' });
+    window.onAgentStream('event', JSON.stringify(early)); // seq 1 arrives while the panel still tracks seq 5
+    window.__evSeq = 1;
+    window.onAgentStream('state', JSON.stringify({ ts: Date.now(), evSeq: 1 })); // the first state arms the replay
+  });
+  // the event must be applied exactly once: not on arrival and again when the replay delivers it
+  const earlyCount = async () => page.evaluate(async () =>
+    (await import('/panel/main.js')).D.notes.filter((n) => n.title === 'Early').length);
+  await expect.poll(earlyCount, { timeout: 10000 }).toBe(1);
+  await page.waitForTimeout(2500); // let any duplicate from the replay land — the count must stay 1
+  await expect.poll(earlyCount).toBe(1);
+});
+
 test('a webhook switches pages after a countdown', async ({ page }) => {
   await page.goto('/panel/');
   await expect(page.locator('.w').first()).toBeVisible();
@@ -247,6 +358,30 @@ test('the settings page loads and its sections open', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('pairing over Wi-Fi shows both QR codes and cancels the code when closed', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.goto('/settings/#general');
+  // the demo answers the API inside the page, so watch the page's own fetch calls
+  await page.evaluate(() => {
+    window.__calls = [];
+    const real = window.fetch;
+    window.fetch = (url, opts) => { window.__calls.push(`${opts?.method || 'GET'} ${url}`); return real(url, opts); };
+  });
+  await page.locator('#lanPair').click();
+  await expect(page.locator('#modal')).toBeVisible();
+  await expect(page.locator('#modalBody h3')).toHaveText('Pair a phone with DEMO-PC');
+  await expect(page.locator('#modalBody .pair-qr img')).toHaveCount(2);
+  await expect(page.locator('#modalBody .pair-qr').nth(1)).toContainText(/Expires in [45]:\d\d/);
+  await expect(page.locator('#modalBody')).toContainText('192.168.1.20, 100.101.102.103');
+  await expect(page.locator('#modalBody .pair-qr').nth(1)).toContainText('confirm the code DE40 0001');
+  await page.screenshot({ path: 'test-results/pair-dialog.png' });
+  await page.locator('#modalClose').click();
+  await expect.poll(() => page.evaluate(() => window.__calls)).toContain('POST /api/pair/cancel?attempt=1');
+  await expect(page.locator('#modal')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
 test('an edit in the settings page shows up on the panel right away', async ({ context }) => {
   const panel = await context.newPage();
   await panel.goto('/panel/');
@@ -350,4 +485,36 @@ test('the landing page embeds the panel', async ({ page }) => {
   await page.getByRole('button', { name: /notification/ }).click();
   await expect(page.frameLocator('#panel').locator('#toast')).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test('the pairing page hands a checked link to the app and clears it from the address bar', async ({ browser, baseURL }) => {
+  const ctx = await browser.newContext({ baseURL, userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130 Mobile' });
+  const page = await ctx.newPage();
+  const fp = 'ab'.repeat(32);
+  await page.goto(`/pair/#v=1&pc=Desk%20PC&fp=${fp}&port=8766&h=192.168.1.10,100.64.0.7&c=${'A'.repeat(22)}&extra=%23x;y`);
+  await expect(page.locator('#pc')).toHaveText('Desk PC');
+  await expect(page.locator('#hosts')).toHaveText('192.168.1.10, 100.64.0.7 (port 8766)');
+  await expect(page.locator('#check')).toHaveText('ABAB ABAB');
+  const href = await page.locator('#open').getAttribute('href');
+  expect(href).toBe(`intent://pair?v=1&pc=Desk%20PC&fp=${fp}&port=8766&h=192.168.1.10%2C100.64.0.7&c=${'A'.repeat(22)}`
+    + '#Intent;scheme=phonebox;package=net.oxog.phonebox.deskpanel;S.browser_fallback_url=https%3A%2F%2Fgithub.com%2Fersinkoc%2Fphonebox%2Freleases%2Flatest;end');
+  expect(new URL(page.url()).hash).toBe('');
+  await page.goto('about:blank'); // a hash-only change would not run the page again
+  await page.goto(`/pair/#v=1&pc=x&fp=${fp}&port=8766&h=8.8.8.8&c=${'A'.repeat(22)}`); // not a local address
+  await expect(page.locator('#bad')).toBeVisible();
+  await page.goto('about:blank');
+  await page.goto(`/pair/#v=1&pc=x&fp=${fp}&port=99999&h=192.168.1.10&c=${'A'.repeat(22)}`); // no such port
+  await expect(page.locator('#bad')).toBeVisible();
+  await page.goto('about:blank');
+  await page.goto(`/pair/#v=1&pc=x&fp=${fp}&port=8766&h=192.168.1.10,8.8.8.8&c=${'A'.repeat(22)}`); // a public address is dropped
+  await expect(page.locator('#hosts')).toHaveText('192.168.1.10 (port 8766)');
+  expect(await page.locator('#open').getAttribute('href')).toContain('&h=192.168.1.10&');
+  await page.goto('about:blank');
+  await page.goto(`/pair/#v=1&pc=x&fp=${fp}&port=8766&h=8.8.8.8&c=${'A'.repeat(22)}`);
+  await expect(page.locator('#bad')).toBeVisible();
+  await page.goto('about:blank');
+  await page.goto('/pair/#v=1&fp=nope');
+  await expect(page.locator('#bad')).toBeVisible();
+  await expect(page.locator('#ok')).toBeHidden();
+  await ctx.close();
 });

@@ -50,6 +50,7 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamin
 builder.Services.AddSingleton(configStore);
 builder.Services.AddSingleton(endpoint);
 builder.Services.AddSingleton<AudioControl>();
+builder.Services.AddSingleton<PairingCodes>();
 builder.Services.AddSingleton<SpotifyControl>();
 builder.Services.AddSingleton<ControlDeck>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ControlDeck>());
@@ -157,17 +158,28 @@ app.UseRouting();
 app.Use(async (ctx, next) =>
 {
     var origin = ctx.Request.Headers.Origin.ToString();
+    var keyless = false; // a Wi-Fi request let in without a key (pairing claim): it must not touch any phone state
     if (lanCert is not null && ctx.Connection.LocalPort == lanCfg.Port)
     {
         // The phone's key opens the panel API; the separate webhook key opens only the webhook endpoints, in a header
         // or, for senders that cannot set headers, in ?token= (URLs end up in logs, so it must not be the phone's key).
         var lan = configStore.Get().Lan;
-        var authorized = Lan.Matches(ctx.Request.Headers.Authorization, lan.Token!)
+        var keyed = Lan.Matches(ctx.Request.Headers.Authorization, lan.Token!)
             || (Lan.IsWebhook(ctx.Request.Path) && (Lan.Matches(ctx.Request.Headers.Authorization, lan.WebhookToken!)
                 || Lan.MatchesQuery(ctx.Request.Query["token"], lan.WebhookToken!)));
-        if (origin != "" || !Lan.AllowedOverLan(ctx.Request.Path) || !authorized)
+        // Pairing without USB: the phone has no key yet and trades a one-time code for it (checked by the endpoint).
+        keyless = !keyed && Lan.IsPairingClaim(ctx.Request.Method, ctx.Request.Path);
+        if (origin != "" || !Lan.AllowedOverLan(ctx.Request.Path) || !(keyed || keyless))
         {
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+        if (keyless)
+        {
+            // the code is all it may send: no phone registry, app version or "phone connected" updates
+            ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>()!.MaxRequestBodySize = 1024;
+            ctx.Response.Headers.CacheControl = "no-store";
+            await next();
             return;
         }
     }
@@ -205,6 +217,53 @@ app.MapGet("/api/pair", (ConfigStore cfg) =>
 {
     var lan = cfg.Get().Lan;
     if (!lan.Enabled || lanCert is null) return Results.Json(new { enabled = false, pc = Environment.MachineName });
+    return Results.Json(new
+    {
+        enabled = true,
+        pc = Environment.MachineName,
+        port = lanCfg.Port,
+        token = lan.Token,
+        fingerprint = Lan.Fingerprint(lanCert),
+        hosts = Lan.Addresses(),
+    });
+});
+
+// Pairing without USB (see PairingCodes). Start and cancel are local only (settings page); the phone claims over Wi-Fi.
+app.MapPost("/api/pair/start", (ConfigStore cfg, PairingCodes codes) =>
+{
+    if (!cfg.Get().Lan.Enabled || lanCert is null)
+        return Results.Json(new { enabled = false, configured = cfg.Get().Lan.Enabled });
+    var (code, expiresAt, attempt) = codes.Start(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    var hosts = Lan.Addresses();
+    var fingerprint = Lan.Fingerprint(lanCert);
+    var link = PairingCodes.Link(Environment.MachineName, fingerprint, lanCfg.Port, hosts, code);
+    var apk = $"https://github.com/ersinkoc/phonebox/releases/download/v{AppPaths.Version}/PhoneBox-{AppPaths.Version}.apk";
+    return Results.Json(new
+    {
+        enabled = true,
+        pc = Environment.MachineName,
+        hosts,
+        port = lanCfg.Port,
+        expiresAt,
+        claims = codes.Claims,
+        attempt,
+        check = PairingCodes.Check(fingerprint),
+        link,
+        qr = PairingCodes.Svg(link),
+        app = apk,
+        appQr = PairingCodes.Svg(apk),
+    });
+});
+app.MapPost("/api/pair/cancel", (long attempt, PairingCodes codes) => { codes.Cancel(attempt); return Results.Ok(); });
+app.MapGet("/api/pair/status", (PairingCodes codes) => Results.Json(new { claims = codes.Claims }));
+app.MapPost("/api/pair/claim", async (HttpRequest req, ConfigStore cfg, PairingCodes codes) =>
+{
+    if (lanCert is null || req.ContentLength is > 1024) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    var code = await PairingCodes.ReadClaimCodeAsync(req);
+    if (code is null || !codes.Claim(code, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    var lan = cfg.Get().Lan;
+    app.Logger.LogInformation("phone paired over Wi-Fi ({Model})", req.Headers["X-PhoneBox-Model"].ToString());
     return Results.Json(new
     {
         enabled = true,
@@ -626,3 +685,6 @@ static void AddMonitor<T>(IServiceCollection s) where T : class, IHostedService
     s.AddSingleton<T>();
     s.AddHostedService(sp => sp.GetRequiredService<T>());
 }
+
+/// <summary>Body of POST /api/pair/claim.</summary>
+internal sealed record PairClaim(string? Code);

@@ -536,6 +536,7 @@ body.offline .offline-msg { display: flex; }
 /* ---------- pomodoro ---------- */
 .w-pomodoro { --q: #ef4444; }
 .w-pomodoro.brk { --q: #22c55e; }
+.w-pomodoro.long { --q: #38bdf8; }
 .w-pomodoro .g-dial { height: min(52cqh, 80cqw); }
 .w-pomodoro:not(.run) .g-val { color: var(--muted); }
 .pomo-btns { display: flex; gap: 8px; margin-top: 4px; }
@@ -842,6 +843,14 @@ body.offline .offline-msg { display: flex; }
 /* ---------- night ---------- */
 #night { position: fixed; inset: 0; z-index: 30; background: #000; display: none; flex-direction: column; align-items: center; justify-content: center; color: #4a3a33; }
 body.night #night { display: flex; }
+
+/* OLED burn-in protection (Settings › Display): with pixel shift the panel steps a few pixels every 2 minutes and the
+   night clock drifts; with idle dim a dark layer covers the panel until it is touched. */
+body.shifted { transform: translate(var(--shift-x, 0px), var(--shift-y, 0px)); transition: transform 2s ease; }
+body.shifted #night > * { transform: translate(var(--night-x, 0), var(--night-y, 0)); transition: transform 3s ease; }
+body::after { content: ""; position: fixed; inset: 0; z-index: 85; background: #000; opacity: 0; pointer-events: none; transition: opacity 1.5s ease; }
+body.dimmed::after { opacity: .65; pointer-events: auto; }
+body.waking::after { opacity: 0; pointer-events: auto; transition: opacity .2s ease; }
 #nClock { font-size: 34vh; font-weight: 200; letter-spacing: -0.04em; line-height: 1; }
 #nDate { font-size: 16px; margin-top: 6px; text-transform: capitalize; }
 

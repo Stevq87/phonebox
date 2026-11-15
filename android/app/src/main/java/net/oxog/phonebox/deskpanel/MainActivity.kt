@@ -3,6 +3,7 @@ package net.oxog.phonebox.deskpanel
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
@@ -25,6 +26,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.Toast
 import android.webkit.JavascriptInterface
 import android.webkit.ConsoleMessage
 import android.webkit.WebResourceRequest
@@ -115,6 +117,51 @@ class MainActivity : Activity(), SensorEventListener {
 
         web.loadUrl("https://$ASSET_HOST/assets/www/index.html")
         hideSystemUi()
+        handlePairingLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePairingLink(intent)
+    }
+
+    /** A pairing link from the computer's QR code (Settings › Wi-Fi › Pair a phone over Wi-Fi): ask, then pair. */
+    private fun handlePairingLink(intent: Intent?) {
+        val pairing = AgentLink.PairLink.parse(intent?.data) ?: return
+        intent?.data = null // not again after a configuration change
+        AlertDialog.Builder(this)
+            .setTitle("Pair with a computer?")
+            .setMessage("\"${pairing.pc}\" at ${pairing.hosts.joinToString()} (port ${pairing.port}).\n\n" +
+                "Check that the computer's pairing window shows the code ${pairing.check}.\n\n" +
+                "Continue only if you started pairing on that computer.")
+            .setPositiveButton("Pair") { _, _ -> pair(pairing) }
+            .setNegativeButton("Cancel", null)
+            .setOnDismissListener { hideSystemUi() }
+            .show()
+            .plainButtons()
+    }
+
+    /** Dialog buttons as written: the default all-caps follows the phone's language ("PAİR" on a Turkish phone). */
+    private fun AlertDialog.plainButtons(): AlertDialog = apply {
+        listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE).forEach { getButton(it)?.isAllCaps = false }
+    }
+
+    private fun pair(pairing: AgentLink.PairLink) {
+        Toast.makeText(this, "Pairing with ${pairing.pc}...", Toast.LENGTH_SHORT).show()
+        Thread {
+            val problem = link.claim(pairing)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread // the pairing is stored; there is no window to show it in
+                if (problem == null) {
+                    Toast.makeText(this, "Paired with ${pairing.pc}", Toast.LENGTH_LONG).show()
+                    stream.stop(); stream.start(); web.reload()
+                } else {
+                    AlertDialog.Builder(this).setTitle("Pairing did not work").setMessage(problem)
+                        .setPositiveButton("OK", null).setOnDismissListener { hideSystemUi() }.show().plainButtons()
+                }
+            }
+        }.start()
     }
 
     /**

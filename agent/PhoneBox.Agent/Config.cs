@@ -173,6 +173,10 @@ public sealed class DisplayConfig
     public bool NightWhenDark { get; set; }
     /// <summary>A hand near the phone (proximity sensor) wakes the night screen.</summary>
     public bool ProximityWake { get; set; } = true;
+    /// <summary>OLED burn-in protection: every 2 minutes the panel moves by a few pixels and the night clock drifts.</summary>
+    public bool PixelShift { get; set; }
+    /// <summary>OLED burn-in protection: dim the panel after this many minutes without a touch; 0 = never.</summary>
+    public int IdleDimMin { get; set; }
     /// <summary>Screen pinning: Home and Recents stay on the panel.</summary>
     public bool Pin { get; set; }
     /// <summary>The panel is the phone's home app: it starts after a reboot and Home returns to it.</summary>
@@ -500,6 +504,7 @@ public sealed partial class ConfigStore(string path)
         c.Display.Appearance?.Normalize();
         c.Display.Hour12 = Hour12JsonConverter.Normalize(c.Display.Hour12);
         c.Display.IdleReturnSec = Math.Clamp(c.Display.IdleReturnSec, 0, 3600);
+        c.Display.IdleDimMin = Math.Clamp(c.Display.IdleDimMin, 0, 1440);
         c.Display.SwitchCountdownSec = Math.Clamp(c.Display.SwitchCountdownSec, 0, 30);
         c.Display.TouchGraceSec = Math.Clamp(c.Display.TouchGraceSec, 0, 600);
         c.Display.MinDwellSec = Math.Clamp(c.Display.MinDwellSec, 0, 600);

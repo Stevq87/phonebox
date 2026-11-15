@@ -35,7 +35,6 @@ NestedInstallerFiles:
   PortableCommandAlias: phonebox
 Dependencies:
   PackageDependencies:
-  - PackageIdentifier: Microsoft.DotNet.DesktopRuntime.10
   - PackageIdentifier: Google.PlatformTools
 ReleaseNotesUrl: https://github.com/ersinkoc/phonebox/releases/tag/v{version}
 Installers:

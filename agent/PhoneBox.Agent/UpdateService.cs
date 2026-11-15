@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Json;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace PhoneBox.Agent;
@@ -32,9 +33,30 @@ public sealed class UpdateService(ConfigStore cfg, AdbReverse adb, IHostApplicat
     /// <summary>Phone app version, reported by the app on every request (X-PhoneBox-App header).</summary>
     public static volatile string? AppVersion;
 
-    public static bool RunningInstalled =>
-        string.Equals(Path.GetFullPath(AppContext.BaseDirectory).TrimEnd('\\', '/'), Path.GetFullPath(InstallDir).TrimEnd('\\', '/'),
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    public static bool RunningInstalled => SameFolder(AppContext.BaseDirectory, InstallDir);
+
+    /// <summary>
+    /// On macOS/Linux the .NET host reports the agent's folder with symbolic links resolved, while the install folder
+    /// comes from HOME / XDG_DATA_HOME and may go through one (a home folder moved to another disk and linked back), so
+    /// both sides are resolved before comparing.
+    /// </summary>
+    internal static bool SameFolder(string a, string b) =>
+        string.Equals(Resolved(a), Resolved(b), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static string Resolved(string folder)
+    {
+        var full = Path.GetFullPath(folder).TrimEnd('\\', '/');
+        if (OperatingSystem.IsWindows()) return full;
+        IntPtr real;
+        try { real = realpath(full, IntPtr.Zero); } // null when the folder does not exist: compare the path as it is
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { return full; } // runs at startup: never fail it
+        if (real == IntPtr.Zero) return full;
+        try { return (Marshal.PtrToStringUTF8(real) ?? full).TrimEnd('/'); }
+        finally { free(real); }
+    }
+
+    [DllImport("libc")] private static extern IntPtr realpath(string path, IntPtr resolved);
+    [DllImport("libc")] private static extern void free(IntPtr pointer);
 
     public UpdateStatus Status()
     {
@@ -50,6 +72,7 @@ public sealed class UpdateService(ConfigStore cfg, AdbReverse adb, IHostApplicat
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("PhoneBox/" + AppPaths.Version);
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         CleanupOldFiles();
+        if (RunningInstalled) RemoveFrameworkDependentLeftovers(InstallDir, SingleFile);
         await Task.Delay(TimeSpan.FromSeconds(20), ct);
         var nextCheck = DateTime.MinValue;
         while (!ct.IsCancellationRequested)
@@ -148,7 +171,7 @@ public sealed class UpdateService(ConfigStore cfg, AdbReverse adb, IHostApplicat
             var adbExe = AdbReverse.FindAdb(cfg.Get().AdbPath) ?? throw new InvalidOperationException("adb not found");
             foreach (var serial in targets)
             {
-                var output = await Run(adbExe, $"-s {serial} install \"{apk}\"", ct);
+                var output = await Run(adbExe, ["-s", serial, "install", apk], ct);
                 if (!output.Contains("Success")) return $"installing on {serial} failed: {output.Trim().Split('\n').LastOrDefault()}";
                 log.LogInformation("phone app {Version} installed on {Serial}", _latest.Version, serial);
             }
@@ -169,10 +192,10 @@ public sealed class UpdateService(ConfigStore cfg, AdbReverse adb, IHostApplicat
         var adbExe = AdbReverse.FindAdb(cfg.Get().AdbPath) ?? throw new InvalidOperationException("adb not found");
         foreach (var serial in adb.Devices.Split(", ", StringSplitOptions.RemoveEmptyEntries))
         {
-            var output = await Run(adbExe, $"-s {serial} install -r \"{apk}\"", ct);
+            var output = await Run(adbExe, ["-s", serial, "install", "-r", apk], ct);
             if (!output.Contains("Success"))
                 throw new InvalidOperationException($"phone update on {serial} failed: {output.Trim().Split('\n').LastOrDefault()}");
-            await Run(adbExe, $"-s {serial} shell am start -n {AdbReverse.PanelActivity}", ct);
+            await Run(adbExe, ["-s", serial, "shell", "am", "start", "-n", AdbReverse.PanelActivity], ct);
             log.LogInformation("phone app on {Serial} updated to {Version}", serial, _latest.Version);
         }
         AppVersion = _latest.Version;
@@ -303,21 +326,48 @@ public sealed class UpdateService(ConfigStore cfg, AdbReverse adb, IHostApplicat
         catch { }
     }
 
+    /// <summary>True when this agent runs as a self-contained single file (the release builds).</summary>
+#pragma warning disable IL3000 // empty in a single-file app: that is exactly what this checks
+    internal static bool SingleFile => string.IsNullOrEmpty(typeof(UpdateService).Assembly.Location);
+#pragma warning restore IL3000
+
+    /// <summary>
+    /// Files of the framework-dependent agent (releases up to 0.9.6). The updater only adds and replaces files, so an
+    /// install updated to a single-file release keeps them; the single-file agent never loads them.
+    /// </summary>
+    internal static readonly string[] FrameworkDependentFiles =
+    [
+        "PhoneBoxAgent.dll", "PhoneBoxAgent.deps.json", "PhoneBoxAgent.runtimeconfig.json",
+        "NAudio.dll", "NAudio.Core.dll", "NAudio.Midi.dll", "NAudio.Wasapi.dll", "NAudio.WinMM.dll",
+        "WinRT.Runtime.dll", "Microsoft.Windows.SDK.NET.dll", "System.Numerics.Tensors.dll",
+    ];
+
+    /// <summary>
+    /// Deletes <see cref="FrameworkDependentFiles"/> from a single-file install. Does nothing for a framework-dependent
+    /// agent (a source install by install.ps1 / install.sh needs them), so either kind can replace the other.
+    /// </summary>
+    internal static void RemoveFrameworkDependentLeftovers(string dir, bool singleFile)
+    {
+        if (!singleFile || !Directory.Exists(dir)) return;
+        foreach (var name in FrameworkDependentFiles)
+            try { File.Delete(Path.Combine(dir, name)); } catch { } // missing files are fine; File.Delete ignores them
+    }
+
     private static bool Newer(string candidate, string current) =>
         Version.TryParse(candidate, out var a) && Version.TryParse(current.Split('-')[0], out var b) && a > b;
 
-    private static async Task<string> Run(string file, string args, CancellationToken ct)
+    /// <summary>
+    /// Runs adb for the updater, bounded and reaped like every other tool (<see cref="ToolProcess"/>): an install that
+    /// never returns (a stuck phone or cable) would otherwise hold the update gate until the agent restarts, and a
+    /// cancelled update would leave adb running. A slow phone can take a while to install, hence the generous default.
+    /// Each argument is passed on its own (ArgumentList), so a path with spaces or quotes needs no quoting.
+    /// </summary>
+    private static async Task<string> Run(string file, string[] args, CancellationToken ct, TimeSpan? timeout = null)
     {
-        var psi = new ProcessStartInfo(file, args)
-        {
-            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
-            WorkingDirectory = AppPaths.NeutralCwd,
-        };
-        using var p = Process.Start(psi)!;
-        var stdout = p.StandardOutput.ReadToEndAsync(ct);
-        var stderr = p.StandardError.ReadToEndAsync(ct);
-        await p.WaitForExitAsync(ct);
-        return await stdout + await stderr;
+        var start = new ProcessStartInfo(file);
+        foreach (var arg in args) start.ArgumentList.Add(arg);
+        var result = await ToolProcess.RunAsync(start, timeout ?? TimeSpan.FromMinutes(3), ct);
+        return result.Output + result.Error;
     }
 
     private sealed record Release(string Version, string? Url, string? Apk, string? AgentZip);
@@ -332,7 +382,8 @@ public static class AppRestart
     {
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory };
         if (string.Equals(Path.GetFileNameWithoutExtension(executable), "dotnet", StringComparison.OrdinalIgnoreCase))
-            start.ArgumentList.Add(typeof(AppRestart).Assembly.Location);
+            // only a framework-dependent agent runs under dotnet; Assembly.Location is empty in a single-file app
+            start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, typeof(AppRestart).Assembly.GetName().Name + ".dll"));
         foreach (var arg in args.Where(a => a != "--restart")) start.ArgumentList.Add(arg);
         start.ArgumentList.Add("--restart");
         return start;

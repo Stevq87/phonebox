@@ -123,6 +123,31 @@ public sealed class RadioDirectoryTests
             RadioBrowserDirectory.GetCountriesAsync(default, brokenHttp));
     }
 
+    [Theory]
+    [InlineData("<html><body>Down for maintenance</body></html>", "text/html")]
+    [InlineData("""{"error":"overloaded"}""", "application/json")]
+    [InlineData("", "application/json")]
+    public async Task AMirrorThatAnswersWithoutTheListIsSkippedLikeAFailingOne(string body, string mediaType)
+    {
+        using var http = new HttpClient(new BodyByHostHandler(host => host.StartsWith("de1.")
+            ? (body, mediaType)
+            : ("""[{ "iso_3166_1": "TR", "name": "Turkey", "stationcount": 512 }]""", "application/json")));
+        var countries = await RadioBrowserDirectory.GetCountriesAsync(default, http);
+        Assert.Equal("TR", Assert.Single(countries).Code);
+
+        using var allBad = new HttpClient(new BodyByHostHandler(_ => (body, mediaType)));
+        await Assert.ThrowsAsync<RadioDirectoryUnavailableException>(() => RadioBrowserDirectory.GetCountriesAsync(default, allBad));
+    }
+
+    private sealed class BodyByHostHandler(Func<string, (string Body, string MediaType)> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var (body, mediaType) = respond(request.RequestUri?.Host ?? "");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, mediaType) });
+        }
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

@@ -14,6 +14,20 @@ Widgets for your PC, AI coding sessions, music, weather and anything you push to
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
+<!-- sponsor: WrongStack -->
+<p align="center">
+  <a href="https://wrongstack.com">
+    <img src="docs/sponsors/wrongstack.svg" width="900" alt="Sponsored by WrongStack — open-source AI coding with durable memory and multi-agent workflows. Explore wrongstack.com.">
+  </a>
+</p>
+<p align="center">
+  <strong>Supported by <a href="https://wrongstack.com">WrongStack</a></strong> ·
+  An open-source AI coding agent that remembers your codebase.<br>
+  <a href="https://wrongstack.com"><strong>Explore WrongStack →</strong></a> ·
+  <a href="https://github.com/wrongstack/wrongstack"><strong>View on GitHub &amp; give it a star ★</strong></a>
+</p>
+<!-- /sponsor: WrongStack -->
+
 <p align="center"><img src="docs/hero-0.6.png" width="900" alt="PhoneBox on three phones: automation, home and planner pages"></p>
 
 PhoneBox has two parts: a small **Android app** that runs full screen on the phone, and an **agent** on the computer
@@ -25,7 +39,7 @@ the pages in a visual editor on the PC: **117 widgets**, **31 templates**, as ma
   buzzes when one finishes or needs you, and Claude Code's permission prompts show up with **Allow** / **Deny**.
   GitHub review requests and your pull requests with CI status.
 - **Desk companion**: now playing with controls and volume, clocks, weather, sun & moon, air quality, calendar,
-  pomodoro, timers, checklists, notes, a breathing exercise.
+  pomodoro (with long breaks or your own sequence), timers, checklists, notes, a breathing exercise.
 - **Stream Deck–style keys** that launch apps, URLs or built-in actions on the PC.
 - **Webhooks and rules**: scripts, CI and Home Assistant push values and notifications; rules switch pages calmly
   when something happens (a call, music, an AI session waiting for you).
@@ -69,50 +83,159 @@ These screenshots use made-up demo data. See the [changelog](CHANGELOG.md) for a
 
 ## Quick start
 
-**[Download the latest PhoneBox release](https://github.com/ersinkoc/phonebox/releases/latest)** — signed Android APK and
-agents for Windows x64, Linux x64/ARM64 and macOS Apple Silicon/Intel. Agent archives need the matching .NET 10
-runtime (Desktop Runtime on Windows). The release includes SHA-256 checksums and build provenance.
-Existing users can update from Settings; existing layouts and pairing settings are retained.
+### 1. Install PhoneBox on the computer
 
-You need an Android 9+ phone with [USB debugging](https://developer.android.com/studio/debug/dev-options) turned on,
-the [.NET 10 SDK](https://dotnet.microsoft.com/download) and `adb`.
-The source installers below build the agent locally. To build the phone app, also install **JDK 17** and
-**Android SDK Platform 35** (for example through Android Studio), set `JAVA_HOME`, and point `ANDROID_HOME` or
-`android/local.properties` (`sdk.dir`) at the SDK. The installers can use a release APK from `dist/`; the Windows
-installer rebuilds it when Android sources are newer, or when `-BuildApk` is supplied.
-
-**Windows 10/11**
+**Windows 10/11**: open PowerShell (a normal window, not *Run as administrator*) and paste:
 
 ```powershell
-winget install Microsoft.DotNet.SDK.10 Google.PlatformTools   # .NET 10 and adb
-git clone https://github.com/ersinkoc/phonebox
-cd phonebox
-.\scripts\install.ps1 -Apk -Autostart   # agent + phone app, start with Windows (add -Serial <id> if several devices are connected)
+irm https://raw.githubusercontent.com/ersinkoc/phonebox/main/setup.ps1 | iex
 ```
 
-Or install just the agent with **Scoop** and let it put the app on the phone (settings › General › *Install the
-phone app*, with the phone plugged in):
-
-```powershell
-scoop bucket add phonebox https://github.com/ersinkoc/phonebox
-scoop install phonebox/phonebox          # needs the .NET 10 Desktop Runtime and adb (scoop install extras/windowsdesktop-runtime main/adb)
-```
-
-A winget package (`ersinkoc.PhoneBox`) is prepared in [`packaging/winget`](packaging/winget) for submission to
-winget-pkgs; once accepted it installs with `winget install ersinkoc.PhoneBox`.
-
-**Linux** (Ubuntu, Debian, Fedora, Arch…) **and macOS**
+**Linux and macOS**: open a terminal and paste (run it as yourself, not with `sudo`):
 
 ```sh
-sudo apt install adb playerctl          # Fedora: android-tools playerctl · macOS: brew install android-platform-tools nowplaying-cli
-git clone https://github.com/ersinkoc/phonebox
-cd phonebox
-./scripts/install.sh --apk --autostart  # agent + phone app; systemd user service (Linux) or launchd agent (macOS)
+curl -fsSL https://raw.githubusercontent.com/ersinkoc/phonebox/main/setup.sh | bash
 ```
 
-Plug the phone in: it wakes up and opens the panel. The settings are at <http://127.0.0.1:8765> (on Windows also
-from the tray icon). `scripts/uninstall.ps1 [-Purge] [-Apk]` / `scripts/uninstall.sh [--purge] [--apk]` remove
-everything again.
+Setup installs the [latest release](https://github.com/ersinkoc/phonebox/releases/latest) and anything missing:
+
+1. **Checks the computer**: Windows x64; Linux x64 / ARM64 with glibc; macOS on Apple silicon or Intel.
+2. **Downloads and checks the agent**: the download must match the release's SHA-256 checksums. With the
+   [GitHub CLI](https://cli.github.com) signed in, it also verifies the build provenance (`gh attestation verify`).
+   No .NET to install: the agent is one self-contained program.
+3. **Installs adb if it is missing**, after asking. adb is the USB link to the phone. Setup gets it from winget, Homebrew or
+   your distribution (apt, dnf, pacman, zypper), or from Google's download as a fallback.
+4. **Offers optional helpers** for more widgets. On Linux: `playerctl` for Now Playing, `pactl` for volume, and `xprintidle`.
+   On macOS: `nowplaying-cli`.
+5. **Installs the agent for your user only**:
+
+   | | Program | Settings (kept on reinstall) |
+   |---|---|---|
+   | Windows | `%LOCALAPPDATA%\PhoneBox\app` | `%APPDATA%\PhoneBox` |
+   | Linux | `~/.local/share/PhoneBox/app` | `~/.config/PhoneBox` |
+   | macOS | `~/Library/Application Support/PhoneBox/app` | `~/Library/Application Support/PhoneBox` |
+
+   Then it asks whether to start PhoneBox at login: a Startup-folder shortcut on Windows, a systemd user service
+   on Linux, a launchd agent on macOS.
+6. **Puts the app on the phone over USB**, if you want. It shows how to turn on USB debugging and waits for the phone.
+7. **Starts the agent** and opens its settings at <http://127.0.0.1:8765>.
+
+Setup needs no administrator rights. On Linux it uses `sudo` only to install packages, and asks first. Run it again
+any time to update or repair PhoneBox; settings and pairings are kept. Read [`setup.ps1`](setup.ps1) or
+[`setup.sh`](setup.sh) before you run it if you like. With `-DryRun` / `--dry-run` it downloads and checks everything
+and changes nothing.
+
+<details><summary><b>Setup options</b></summary>
+
+| Windows (`setup.ps1`) | Linux / macOS (`setup.sh`) | |
+|---|---|---|
+| `-Yes` | `--yes` | Take the default answer to every question (unattended) |
+| `-NoPhone` | `--no-phone` | Do not install the app over USB (for a Wi-Fi-only phone) |
+| `-Serial <id>` | `--serial <id>` | The phone to use when several are connected (`adb devices`) |
+| `-NoAutostart` | `--no-autostart` | Do not start PhoneBox at login |
+| `-NoStart` | `--no-start` | Install only |
+| — | `--no-extras` | Do not offer the optional helpers |
+| `-Version 0.9.8` | `--version 0.9.8` | Install that release instead of the latest |
+| `-DryRun` | `--dry-run` | Download and check, change nothing |
+
+To pass options:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ersinkoc/phonebox/main/setup.ps1))) -NoPhone
+```
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ersinkoc/phonebox/main/setup.sh | bash -s -- --no-phone
+```
+
+</details>
+
+<details><summary><b>Before you run it: warnings</b></summary>
+
+- **The Windows agent is not code-signed yet.** The [SignPath Foundation](#code-signing-policy) application is pending.
+  Windows SmartScreen or an antivirus may warn about a new, unsigned program, and some antivirus engines have flagged
+  it ([#69](https://github.com/ersinkoc/phonebox/issues/69)). Setup only installs a file that matches the release
+  checksum. If your antivirus removes `PhoneBoxAgent.exe`, setup says so; restore it from quarantine or report it.
+- **Smart App Control** (Windows 11) blocks programs that are neither signed nor known to Microsoft. The release
+  agent has run with it on, while agents built from source can be blocked. Setup tells you when it is on. If it
+  blocks PhoneBox, don't turn it off for PhoneBox: it cannot be turned back on without resetting Windows. Report
+  the message in [#69](https://github.com/ersinkoc/phonebox/issues/69) instead.
+- **USB debugging gives a computer you allow control over the phone.** Allow only your own computers. You can
+  withdraw them on the phone under *Developer options › Revoke USB debugging authorisations*.
+- **Wi-Fi is off until you turn it on.** Until then the agent listens only on this computer (`127.0.0.1:8765`).
+  When you turn it on, Windows asks to let PhoneBox through the firewall: allow *Private* networks only. On Linux
+  with ufw or firewalld, open TCP port 8766 for your local network. Every connection PhoneBox makes is listed in
+  the [privacy policy](PRIVACY.md).
+- **Linux USB permissions**: if `adb devices` shows `no permissions`, adb also needs udev rules. Install
+  `android-sdk-platform-tools-common` on Debian/Ubuntu or `android-udev` on Arch. Some systems also need the
+  `plugdev` group (`sudo usermod -aG plugdev $USER`, then log out and in). Setup points this out when it happens.
+- **On macOS**, the agent is signed ad hoc, not with an Apple Developer ID. The first time, macOS may ask whether
+  it may control Music or Spotify (for Now Playing), or accept incoming connections (with Wi-Fi on).
+- **Windows USB drivers**: if the phone never appears, Windows may need its USB driver. Google phones use the
+  Google USB Driver; other brands have one on their support site.
+- **Scoop users**: setup stops if PhoneBox is installed with Scoop, so two copies don't fight over the same port.
+  Keep using `scoop update phonebox`, or `scoop uninstall phonebox` first and then run setup.
+- **Windows on ARM** and **musl Linux** (Alpine) have no release build yet.
+
+</details>
+
+### 2. Connect the phone
+
+- **Over USB** (recommended): it wakes the phone on plug-in, updates the app and falls back to USB when Wi-Fi drops.
+  The phone needs Android 9 or later with USB debugging turned on:
+  1. *Settings › About phone*: tap *Build number* seven times.
+  2. *Developer options*: turn on *USB debugging*. On Xiaomi, Redmi and POCO, also turn on *Install via USB*.
+  3. Plug the phone in with a data cable and answer *Allow USB debugging?* with *Allow*.
+
+  Setup installs the app, or use *Settings › General › Install the phone app* later. Then the phone wakes up and
+  opens the panel whenever it is plugged in.
+- **Over Wi-Fi only**, with no developer options or adb: install the APK from the
+  [release page](https://github.com/ersinkoc/phonebox/releases/latest) on the phone. Then on the computer turn on
+  *Settings › General › Wi-Fi & Tailscale*, click **Pair a phone over Wi-Fi** and scan the QR code (see
+  [Wi-Fi & Tailscale](#wi-fi--tailscale)).
+
+The settings are at <http://127.0.0.1:8765>, on Windows also from the tray icon.
+
+### Other ways to install
+
+- **Manual download**: the [release](https://github.com/ersinkoc/phonebox/releases/latest) has the signed Android
+  APK and agents for Windows x64, Linux x64/ARM64 and macOS Apple silicon/Intel, with SHA-256 checksums and build
+  provenance. Unzip the agent and run it. It can update itself only from the install folder in the table above.
+- **Scoop** (Windows), which can then put the app on the phone from *Settings › General › Install the phone app*:
+
+  ```powershell
+  scoop bucket add phonebox https://github.com/ersinkoc/phonebox
+  scoop install main/adb phonebox/phonebox
+  ```
+
+- **winget**: a package (`ersinkoc.PhoneBox`) is prepared in [`packaging/winget`](packaging/winget) for
+  winget-pkgs. Once it is accepted, `winget install ersinkoc.PhoneBox` will install it.
+- **From source** (for development): needs the [.NET 10 SDK](https://dotnet.microsoft.com/download) and `adb`. To build
+  the phone app it also needs **JDK 17** and **Android SDK Platform 35** (for example through Android Studio), with
+  `JAVA_HOME` set and `ANDROID_HOME` or `android/local.properties` (`sdk.dir`) pointing at the SDK.
+
+  ```powershell
+  git clone https://github.com/ersinkoc/phonebox; cd phonebox
+  .\scripts\install.ps1 -Apk -Autostart   # add -Serial <id> with several devices; -BuildApk always rebuilds the app
+  ```
+
+  ```sh
+  git clone https://github.com/ersinkoc/phonebox && cd phonebox
+  ./scripts/install.sh --apk --autostart  # systemd user service (Linux) or launchd agent (macOS)
+  ```
+
+### Uninstall
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ersinkoc/phonebox/main/scripts/uninstall.ps1))) # add -Purge -Apk
+```
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ersinkoc/phonebox/main/scripts/uninstall.sh | bash -s --   # add --purge --apk
+```
+
+Without options it removes the program and the start-at-login entry and keeps the settings. `-Purge` / `--purge` also
+deletes the settings, and `-Apk` / `--apk` removes the app from the connected phone.
 
 <details><summary><b>What works where</b></summary>
 
@@ -148,6 +271,13 @@ Set corner radius, widget spacing, inner padding, page padding, borders and shad
 Appearance**. Choose Original, Rounded cards, Flat, Content only or Seamless panel, then customize individual values.
 Pages and individual widgets can override global defaults. Live preview shows unsaved changes before Save.
 Existing layouts keep their original appearance. See the [appearance guide](docs/APPEARANCE.md).
+
+For OLED screens that show the same page all day, **Settings → General → OLED burn-in protection** has two options:
+
+- move the panel by a few pixels every 2 minutes (and the night clock around the screen);
+- dim the panel after a set time without a touch. The touch that brightens it again does not press anything.
+
+The AMOLED black theme and the night screen help too.
 
 ## Control Deck
 
@@ -256,7 +386,7 @@ Double-click the tray icon on Windows (or open <http://127.0.0.1:8765>):
 - **General**: weather location search; calendars (ICS links from Google, Outlook or iCloud), Home Assistant and OBS
   connections; night mode; theme and accent colour, orientation (landscape, portrait or follow the phone), clock seconds,
   vibration, volume-key paging and the phone's sensors (brightness that follows the room, the night screen when the
-  room goes dark, wave to wake it); [page switching](#rules) (home page, countdown, back home after);
+  room goes dark, wave to wake it); OLED burn-in protection; [page switching](#rules) (home page, countdown, back home after);
   kiosk options (screen pinning, the panel as the phone's home screen so it starts after a reboot, keep the phone
   awake on the charger; no root needed); on macOS, optionally follow the computer lock (sleep the phone on lock,
   wake it and open PhoneBox on unlock, with an ADB connection; phones secured by a PIN or password must be unlocked
@@ -355,10 +485,21 @@ switchable ports). The panel keeps running over Wi-Fi while the USB power is off
 
 ## Wi-Fi & Tailscale
 
-Turn on **Settings › General › Wi-Fi & Tailscale**, restart the agent when asked, and plug the phone in once. Over
-USB the phone receives the PC's addresses, a secret key and the fingerprint of the agent's self-signed TLS
-certificate. When the cable is unplugged it switches to `https://<pc>:8766` automatically and back to USB when it is
-plugged in again; the status line shows which one it uses.
+Turn on **Settings › General › Wi-Fi & Tailscale** and restart the agent when asked. Then pair the phone in one
+of two ways:
+
+- **Without a cable:** click **Pair a phone over Wi-Fi**. The window shows a QR code that downloads the app and one
+  that pairs. Scan the second with the phone's camera, open the link and tap **Open in PhoneBox**; the phone asks you
+  to confirm a code that the window also shows. No developer options, USB debugging or adb needed. The QR code holds
+  the PC's addresses, its certificate fingerprint and a one-time code (5 minutes, single use), never the key itself.
+  A phone paired this way only uses Wi-Fi: plugging it into the PC does not wake it or open the panel, there is no
+  USB fallback when Wi-Fi drops, and app updates are installed from the release page instead of over USB.
+- **Over USB:** plug the phone in once.
+
+Either way the phone gets the PC's addresses, a secret key and the fingerprint of the agent's self-signed TLS
+certificate, and trusts only that certificate. With USB, when the cable is unplugged it switches to
+`https://<pc>:8766` automatically and back to USB when it is plugged in again; the status line shows which one it
+uses.
 
 - The phone and the PC need to be on the same network. If they are not (separate Wi-Fi networks, another
   building…), install [Tailscale](https://tailscale.com) on both: the agent offers its Tailscale address too.
@@ -472,6 +613,8 @@ Yes. PhoneBox needs no root on the phone and no admin rights on the PC.
 
 ## Development
 
+Contributions are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md) first (scope, the security model, privacy and tests).
+
 Use the .NET 10 SDK for the agent, JDK 17 and Android SDK Platform 35 for Android builds, and Python 3 plus
 Node.js 22 for the browser tooling. The Gradle wrapper downloads Gradle automatically.
 
@@ -529,14 +672,25 @@ the phone PhoneBox was built for.
 Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
 [SignPath Foundation](https://signpath.org/).
 
-- **What is signed**: the Windows agent (`PhoneBoxAgent.exe` and `PhoneBoxAgent.dll`) in the `win-x64` release zip.
+- **What is signed**: the Windows agent (`PhoneBoxAgent.exe`, a single self-contained program) in the `win-x64` release zip.
   It is built from this repository by the [release workflow](.github/workflows/release.yml) on GitHub Actions, and
-  every signing request is approved by hand. Third-party libraries in the zip keep their own publishers' signatures.
+  every signing request is approved by hand. The .NET runtime and the open-source libraries bundled into it are listed in
+  `THIRD-PARTY-NOTICES.txt`.
   Status: the application to SignPath Foundation is pending; until it is approved, releases are unsigned.
 - **Android app**: the APK is signed with the project's own release key, not through SignPath.
 - **Team roles**: committers and reviewers: [ersinkoc](https://github.com/ersinkoc); approvers:
   [ersinkoc](https://github.com/ersinkoc). Pull requests from other contributors are reviewed before they are merged.
 - **Privacy**: see the [privacy policy](PRIVACY.md).
+
+## Star History
+
+<a href="https://www.star-history.com/#ersinkoc/phonebox&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ersinkoc/phonebox&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ersinkoc/phonebox&type=Date">
+    <img alt="Star history of ersinkoc/phonebox" src="https://api.star-history.com/svg?repos=ersinkoc/phonebox&type=Date">
+  </picture>
+</a>
 
 ## License
 

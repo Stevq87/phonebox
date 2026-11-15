@@ -119,6 +119,10 @@ input[type=search] { background: var(--panel-2); border: 1px solid var(--line); 
 textarea { width: 100%; resize: vertical; }
 [hidden] { display: none !important; }
 .modal { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.pair-qrs { display: flex; flex-wrap: wrap; gap: 18px; margin: 12px 0; }
+.pair-qr { flex: 1 1 260px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.pair-qr img { width: min(260px, 100%); aspect-ratio: 1; background: #fff; border-radius: 12px; padding: 6px; }
+.pair-qr.expired img { opacity: .15; }
 .modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; width: min(1000px, 100%); max-height: 90vh; overflow-y: auto; }
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
 .tpl { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; }
@@ -482,6 +486,14 @@ dd { margin: 0; word-break: break-all; }
       </div>
 
       <div class="card">
+        <h3>OLED burn-in protection</h3>
+        <p class="hint" style="margin:0 0 12px">For OLED screens that show the same page for hours. The AMOLED black theme and the night screen help too.</p>
+        <label class="check"><input type="checkbox" data-bind="display.pixelShift"> Move the panel by a few pixels every 2 minutes, and the night clock around the screen</label>
+        <div class="field" style="max-width:420px;margin-top:8px"><label>Dim the panel after (minutes without a touch, 0 = never)</label><input type="number" min="0" max="1440" data-bind="display.idleDimMin" data-type="int">
+          <span class="hint">A touch brightens it again without pressing anything; so do a page switch, a notification and a permission prompt.</span></div>
+      </div>
+
+      <div class="card">
         <h3>Page switching</h3>
         <p class="hint" style="margin:0 0 12px">How rules, webhooks and the idle return change the page. Instead of jumping, the phone shows
           <i>“Claude needs me — switching to AI in 3…”</i> with <b>Stay</b> and <b>Go now</b>, then fades over. It never pulls a page away while
@@ -576,7 +588,8 @@ dd { margin: 0; word-break: break-all; }
       <div class="card">
         <h3>Wi-Fi &amp; Tailscale</h3>
         <div class="row" style="margin-bottom:8px"><label class="switch"><input type="checkbox" data-bind="lan.enabled"><span></span></label> Let the phone connect without the USB cable</div>
-        <p class="hint" style="margin:0 0 12px">Pairing happens over USB: after turning this on (and restarting), plug the phone in once.
+        <p class="hint" style="margin:0 0 12px">Pair a phone by plugging it in once over USB after turning this on (and restarting), or without a cable:
+          <b>Pair a phone over Wi-Fi</b> shows a QR code to scan with the phone's camera.
           The phone then talks HTTPS to this PC, trusts only this PC's certificate and has to present a secret key.
           The phone and this PC must be on the same network &mdash; or both on <a href="https://tailscale.com" target="_blank" rel="noopener">Tailscale</a>, which also works from another place or across separate Wi-Fi networks.
           Windows Firewall asks once &mdash; allow it (tick the network type Tailscale uses, too).</p>
@@ -584,7 +597,7 @@ dd { margin: 0; word-break: break-all; }
           <div class="field"><label>Port</label><input type="number" min="1024" max="65535" data-bind="lan.port" data-type="int"></div>
           <div class="field"><label>Addresses offered to the phone</label><div id="lanHosts" class="hint">—</div></div>
         </div>
-        <div class="row"><button class="btn" id="lanRegen">New key (unpair phones)</button><span class="hint" id="lanStatus"></span></div>
+        <div class="row"><button class="btn primary" id="lanPair">Pair a phone over Wi-Fi</button><button class="btn" id="lanRegen">New key (unpair phones)</button><span class="hint" id="lanStatus"></span></div>
       </div>
       <div class="card">
         <h3>Updates</h3>
@@ -1421,7 +1434,61 @@ function openTemplates(index) {
       ...catalog.templates.map((t) => h('button', { class: 'tpl', onclick: () => pick(t) }, miniMap(t.widgets), h('b', {}, `${t.icon} ${t.title}`), h('small', {}, t.desc)))));
   $('modal').hidden = false;
 }
-function closeModal() { $('modal').hidden = true; }
+let onModalClose = null; // a dialog that has to clean up (the pairing code) sets this
+function closeModal() {
+  $('modal').hidden = true;
+  const done = onModalClose; onModalClose = null;
+  done?.();
+}
+
+// ---------------------------------------------------------------- pairing over Wi-Fi (no USB)
+let pairAttempt = 0; // the dialog's current attempt: late answers from an older one are ignored
+async function pairOverWifi() {
+  const mine = ++pairAttempt;
+  let r;
+  try { r = await (await fetch('/api/pair/start', { method: 'POST' })).json(); } catch (_) { toast('Could not start pairing', true); return; }
+  const cancel = () => fetch('/api/pair/cancel?attempt=' + encodeURIComponent(r.attempt), { method: 'POST' }).catch(() => {});
+  if (mine !== pairAttempt) { if (r.enabled) cancel(); return; } // started again meanwhile
+  if (!r.enabled) {
+    toast(r.configured ? 'Restart the agent first (Wi-Fi was just turned on)' : 'Turn on “Let the phone connect without the USB cable”, save and restart first', true);
+    return;
+  }
+  const svg = (markup) => 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(markup)));
+  const left = h('b', {}, '');
+  const pairBox = h('div', { class: 'pair-qr' },
+    h('b', {}, '2. Scan this with the phone’s camera'),
+    h('img', { src: svg(r.qr), alt: 'Pairing QR code' }),
+    h('small', { class: 'hint' }, 'Open the link it shows and choose PhoneBox. The phone asks you to confirm the code ', h('b', {}, r.check), '. ', left));
+  $('modalBody').replaceChildren(
+    h('h3', {}, `Pair a phone with ${r.pc}`),
+    h('p', { class: 'hint', style: 'margin:0' }, 'No USB cable, developer options or adb needed. The phone and this computer must be on the same network (or both on Tailscale).'),
+    h('div', { class: 'pair-qrs' },
+      h('div', { class: 'pair-qr' },
+        h('b', {}, '1. Install the app (skip if it is installed)'),
+        h('img', { src: svg(r.appQr), alt: 'QR code of the app download' }),
+        h('small', { class: 'hint' }, 'Downloads the PhoneBox app. Android asks once to allow installing apps from the browser.')),
+      pairBox),
+    h('p', { class: 'hint', style: 'margin:0' }, r.hosts.length
+      ? `The phone will connect to ${r.hosts.join(', ')} on port ${r.port}. The code works once, for 5 minutes; the key itself is not in the QR code.`
+      : 'No LAN or Tailscale address was found on this computer, so the phone has nothing to connect to.'),
+    h('div', { class: 'row', style: 'margin-top:8px' },
+      h('button', { class: 'btn sm', onclick: () => { navigator.clipboard?.writeText(r.link); toast('Pairing link copied'); } }, 'Copy the pairing link')));
+  const tick = async () => {
+    try {
+      const s = await (await fetch('/api/pair/status')).json();
+      if (mine !== pairAttempt) return; // this dialog was closed (and maybe a new one opened) while waiting
+      if (s.claims > r.claims) { onModalClose = () => { pairAttempt++; clearInterval(timer); }; closeModal(); toast('Phone paired over Wi-Fi'); return; }
+    } catch (_) { }
+    if (mine !== pairAttempt) return;
+    const ms = r.expiresAt - Date.now();
+    if (ms <= 0) { left.textContent = 'Expired: close and start again.'; pairBox.classList.add('expired'); clearInterval(timer); return; }
+    left.textContent = `Expires in ${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.`;
+  };
+  const timer = setInterval(tick, 1000);
+  tick();
+  onModalClose = () => { pairAttempt++; clearInterval(timer); cancel(); };
+  $('modal').hidden = false;
+}
 
 // ---------------------------------------------------------------- phones
 let phonesSeen = [];
@@ -2459,6 +2526,7 @@ $('hookBtn').onclick = async () => {
   loadInfo();
 };
 $('modalClose').onclick = closeModal;
+$('lanPair').onclick = pairOverWifi;
 $('modal').onclick = (e) => { if (e.target.id === 'modal') closeModal(); };
 const whTry = (fn, ok) => async () => { try { await fn(); toast(ok); loadPushed(); } catch (e) { toast(e.message, true); } };
 $('whNotify').onclick = whTry(() => postJson('/api/notify', { title: 'PhoneBox', text: 'Hello from the settings page 👋', level: 'ok' }), 'Sent — look at the phone');

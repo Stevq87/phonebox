@@ -1,4 +1,24 @@
-NAudio 3.3.0
+PhoneBox agent: third-party software
+
+The release agent is self-contained: it includes the .NET runtime and ASP.NET Core, QRCoder, and on Windows also
+Windows Forms, the C#/WinRT projection (WinRT.Runtime, Microsoft.Windows.SDK.NET) and NAudio.
+
+.NET runtime, ASP.NET Core, Windows Forms, C#/WinRT
+https://github.com/dotnet/runtime  https://github.com/dotnet/aspnetcore  https://github.com/dotnet/winforms
+https://github.com/microsoft/CsWinRT
+MIT License, Copyright (c) .NET Foundation and Contributors / Microsoft Corporation
+(the same MIT terms as below)
+
+--------------------------------------------------------------------------------
+
+QRCoder 1.8.1
+https://github.com/Shane32/QRCoder
+MIT License, Copyright (c) 2013-2025 Raffael Herrmann; Copyright (c) 2024-2025 Shane Krueger
+(the same MIT terms as below)
+
+--------------------------------------------------------------------------------
+
+NAudio 3.3.0 (Windows build)
 https://github.com/naudio/NAudio
 MIT License
 Copyright 2020 Mark Heath

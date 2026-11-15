@@ -34,7 +34,10 @@ public sealed class PingMonitorTests
             monitor.Sample(12, "stale"); // as if a host had been set before
             using var cts = new CancellationTokenSource();
             await monitor.StartAsync(cts.Token);
-            await Task.Delay(300);
+            // .NET 10 runs ExecuteAsync on a thread-pool thread, so the first pass (which clears the old host's
+            // snapshot) has no fixed start time; a busy CI machine took longer than a fixed 300 ms
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (monitor.Snapshot() is not null && DateTime.UtcNow < deadline) await Task.Delay(20);
             Assert.Null(monitor.Snapshot());
             await monitor.StopAsync(CancellationToken.None);
         }

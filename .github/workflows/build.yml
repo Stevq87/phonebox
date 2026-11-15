@@ -87,8 +87,19 @@ jobs:
       - name: Unix installer regression checks with the system Bash
         if: matrix.rid != 'win-x64'
         run: python3 tools/test-unix-installer.py --bash /bin/bash
-      - name: Publish agent
-        run: dotnet publish agent/PhoneBox.Agent -c Release -f ${{ matrix.tfm }} -r ${{ matrix.rid }} --self-contained false -o out --nologo
+      # the same build as the release (release.yml), so a pull request runs what ships
+      - name: Publish agent (self-contained, single file)
+        run: dotnet publish agent/PhoneBox.Agent -c Release -f ${{ matrix.tfm }} -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -o out --nologo
+      - name: Sign macOS apphost ad hoc
+        if: startsWith(matrix.rid, 'osx-')
+        run: codesign --force --sign - out/PhoneBoxAgent
+      - name: Smoke test the single-file agent (Windows)
+        if: matrix.rid == 'win-x64'
+        shell: pwsh
+        run: |
+          $version = ([regex]'<Version>([^<]+)</Version>').Match((Get-Content -Raw agent/PhoneBox.Agent/PhoneBox.Agent.csproj)).Groups[1].Value
+          python tools/smoke-agent.py out/PhoneBoxAgent.exe --version $version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Smoke test (starts, serves the API)
         if: matrix.rid != 'win-x64'
         run: |

@@ -46,7 +46,7 @@ header .gh:hover { border-color: var(--accent); }
 .card h3 { font-size: 15px; margin-bottom: 4px; }
 .card p { color: var(--muted); font-size: 14px; }
 .cta { margin-top: 36px; text-align: center; }
-.cta code { background: var(--panel); border: 1px solid var(--line); padding: 3px 8px; border-radius: 6px; font-size: 13px; }
+.cta code { overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line); padding: 3px 8px; border-radius: 6px; font-size: 13px; }
 .policy { margin-top: 36px; background: rgba(16, 20, 27, .8); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; color: var(--muted); font-size: 14px; }
 .policy h2 { font-size: 15px; color: var(--text); margin-bottom: 6px; }
 .policy ul { margin-top: 6px; padding-left: 18px; }
@@ -88,8 +88,10 @@ footer { margin-top: 40px; text-align: center; color: var(--muted); font-size: 1
   </div>
 
   <div class="cta">
-    <p>Install: <code>./scripts/install.sh --apk</code> (Linux, macOS) or <code>.\scripts\install.ps1 -Apk</code> (Windows) —
-      see the <a href="https://github.com/ersinkoc/phonebox#quick-start">quick start</a>, or download a
+    <p>Install on Windows (PowerShell, not as administrator):<br><code>irm https://raw.githubusercontent.com/ersinkoc/phonebox/main/setup.ps1 | iex</code></p>
+    <p>On Linux and macOS:<br><code>curl -fsSL https://raw.githubusercontent.com/ersinkoc/phonebox/main/setup.sh | bash</code></p>
+    <p>Setup checks the download, installs adb if it is missing and can put the app on the phone. See the
+      <a href="https://github.com/ersinkoc/phonebox#quick-start">quick start</a> for what it does and its warnings, or download a
       <a href="https://github.com/ersinkoc/phonebox/releases/latest">release</a>.</p>
   </div>
 
@@ -97,7 +99,7 @@ footer { margin-top: 40px; text-align: center; color: var(--muted); font-size: 1
     <h2>Code signing policy</h2>
     <p>Free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>.</p>
     <ul>
-      <li>The Windows agent (<code>PhoneBoxAgent.exe</code>, <code>PhoneBoxAgent.dll</code>) is built from the <a href="https://github.com/ersinkoc/phonebox">source repository</a> on GitHub Actions and every signing request is approved by hand. The application to SignPath Foundation is pending; until it is approved, releases are unsigned.</li>
+      <li>The Windows agent (<code>PhoneBoxAgent.exe</code>) is built from the <a href="https://github.com/ersinkoc/phonebox">source repository</a> on GitHub Actions and every signing request is approved by hand. The application to SignPath Foundation is pending; until it is approved, releases are unsigned.</li>
       <li>Committers and reviewers: <a href="https://github.com/ersinkoc">ersinkoc</a>. Approvers: <a href="https://github.com/ersinkoc">ersinkoc</a>.</li>
       <li>Privacy: PhoneBox has no accounts and no telemetry. The <a href="https://github.com/ersinkoc/phonebox/blob/main/PRIVACY.md">privacy policy</a> lists every connection it makes.</li>
     </ul>
